@@ -486,8 +486,11 @@ export function renderBubbles(
 
 // ── Active PC screen glow ───────────────────────────────────────
 
-/** Paint an animated colored rectangle over the screen area of each active PC.
- *  The glow's hue cycles slowly per-agent so different desks shimmer at different phases. */
+/** Paint an animated screen on each active PC: hue-cycling background, randomized
+ *  scrolling "code rows" (1-2 px-tall colored stripes) that shift each frame, and
+ *  occasional fast blink/flicker so the screen reads as "live work happening".
+ *  Each agent has a different hue phase + scroll offset so adjacent monitors look
+ *  distinct rather than identical. */
 export function renderActivePCScreens(
   ctx: CanvasRenderingContext2D,
   tiles: Array<{ col: number; row: number; agentId: number }>,
@@ -504,21 +507,38 @@ export function renderActivePCScreens(
   const SCREEN_H = 6
   ctx.save()
   for (const t of tiles) {
-    // Per-agent hue offset so siblings cycle differently
-    const phase = (t.agentId * 73) % 360
-    const hue = (phase + timeMs * 0.06) % 360
-    // Mild pulse on the alpha so it reads as "live"
-    const pulse = 0.55 + 0.25 * Math.sin(timeMs * 0.004 + t.agentId)
-    const color = `hsl(${hue}, 80%, 62%)`
+    const seed = t.agentId * 73
+    const hue = (seed + timeMs * 0.06) % 360
+    // Quick blink: ~3 Hz square-ish wave; alpha drops briefly each cycle.
+    const blinkPhase = ((timeMs * 0.003) + (seed * 0.137)) % 1
+    const blink = blinkPhase < 0.06 ? 0.15 : 1
     const px = offsetX + (t.col * TILE_SIZE + SCREEN_X) * zoom
     const py = offsetY + (t.row * TILE_SIZE + SCREEN_Y) * zoom
     const w = SCREEN_W * zoom
     const h = SCREEN_H * zoom
-    ctx.globalAlpha = pulse
-    ctx.fillStyle = color
+
+    // Background screen color
+    ctx.globalAlpha = blink
+    ctx.fillStyle = `hsl(${hue}, 80%, 26%)`
     ctx.fillRect(px, py, w, h)
-    // Subtle highlight on the top edge
-    ctx.globalAlpha = pulse * 0.6
+
+    // Scrolling "code rows" — one px-row per sprite-pixel, shifted by time so they
+    // appear to scroll. Use a deterministic pseudo-random per (agent, row).
+    const rowH = Math.max(1, Math.floor(zoom))
+    for (let i = 0; i < SCREEN_H; i++) {
+      const scroll = Math.floor(timeMs * 0.012 + seed) // px per second
+      const row = (i + scroll) % SCREEN_H
+      const r = (seed * 17 + row * 31) % 100
+      if (r > 65) continue // gaps
+      const len = 2 + (r % 4) // 2-5 sprite-px wide
+      const startX = (r * 7) % (SCREEN_W - len)
+      const lightness = 55 + (r % 25) // 55-80%
+      ctx.fillStyle = `hsl(${(hue + r) % 360}, 90%, ${lightness}%)`
+      ctx.fillRect(px + startX * zoom, py + i * rowH, len * zoom, rowH)
+    }
+
+    // Bright top-edge highlight
+    ctx.globalAlpha = blink * 0.7
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(px, py, w, Math.max(1, zoom))
   }

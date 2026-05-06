@@ -109,8 +109,9 @@ export function DeskLabels({ officeState, agentTools, containerRef, zoom, panRef
         // Center the label on the middle desk's center column.
         const centerCol = (c.colMin + c.colMax) / 2 + 0.5
         const wx = centerCol * TILE_SIZE
-        // Anchor at the bottom edge of the monitor row so the label sits just below the screen.
-        const wy = (c.labelRow + 1) * TILE_SIZE - 2
+        // Anchor at the FRONT FACE of the desk — bottom edge of the bottom desk row.
+        // Label hangs just slightly into the aisle below, like a name plate.
+        const wy = (c.labelRow + 1) * TILE_SIZE + 1
         const screenX = (deviceOffsetX + wx * zoom) / dpr
         const screenY = (deviceOffsetY + wy * zoom) / dpr
         const projects = projectsByCluster[i]
@@ -121,7 +122,7 @@ export function DeskLabels({ officeState, agentTools, containerRef, zoom, panRef
               position: 'absolute',
               left: screenX,
               top: screenY,
-              transform: 'translate(-50%, -100%)',
+              transform: 'translate(-50%, -50%)',
               pointerEvents: 'none',
               zIndex: 30,
               display: 'flex',
@@ -132,17 +133,17 @@ export function DeskLabels({ officeState, agentTools, containerRef, zoom, panRef
           >
             <span
               style={{
-                fontSize: '11px',
+                fontSize: '10px',
                 lineHeight: 1,
                 padding: '2px 6px',
                 background: TONE_BG[c.tone],
                 color: '#f4f4ff',
-                border: '1px solid rgba(255,255,255,0.20)',
+                border: '1px solid rgba(255,255,255,0.25)',
                 borderRadius: 0,
                 whiteSpace: 'nowrap',
                 fontWeight: 700,
                 letterSpacing: '0.6px',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.35)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.4)',
                 fontFamily: 'inherit',
               }}
             >
