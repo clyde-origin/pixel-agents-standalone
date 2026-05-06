@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
-import type { OfficeLayout, ToolActivity } from '../office/types.js'
+import type { OfficeLayout, ToolActivity, FeedEntry } from '../office/types.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js'
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js'
@@ -74,6 +74,8 @@ export interface ExtensionMessageState {
   responses: Record<string, ResponseTemplate[]>
   /** Active pending permission requests across all agents (top-right queue badge). */
   pending: Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>
+  /** Per-agent live feed entries (text turns, tool starts/dones, permission asks, system events). */
+  agentFeeds: Record<number, FeedEntry[]>
 }
 
 const DESK_ASSIGNMENT_STORAGE_KEY = 'pixel-agents:home-desk-assignments'
@@ -169,6 +171,7 @@ export function useExtensionMessages(
   const [permissionContexts, setPermissionContexts] = useState<Record<number, PermissionContext>>({})
   const [responses, setResponses] = useState<Record<string, ResponseTemplate[]>>({ default: [] })
   const [pending, setPending] = useState<Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>>([])
+  const [agentFeeds, setAgentFeeds] = useState<Record<number, FeedEntry[]>>({})
   const homeDeskAssignmentsRef = useRef<Record<string, string>>(homeDeskAssignments)
   const updateHomeDeskAssignments = (next: Record<string, string>) => {
     homeDeskAssignmentsRef.current = next
@@ -581,6 +584,17 @@ export function useExtensionMessages(
         } catch (err) {
           console.error(`❌ Webview: Error processing furnitureAssetsLoaded:`, err)
         }
+      } else if (msg.type === 'agentFeedSnapshot') {
+        const id = msg.id as number
+        setAgentFeeds((prev) => ({ ...prev, [id]: (msg.entries || []) as FeedEntry[] }))
+      } else if (msg.type === 'agentFeedAppend') {
+        const id = msg.id as number
+        setAgentFeeds((prev) => {
+          const list = prev[id] ?? []
+          const next = [...list, msg.entry as FeedEntry]
+          if (next.length > 40) next.shift()
+          return { ...prev, [id]: next }
+        })
       }
     }
     window.addEventListener('message', handler)
@@ -588,5 +602,5 @@ export function useExtensionMessages(
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending }
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds }
 }

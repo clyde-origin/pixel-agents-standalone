@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { OfficeState } from './office/engine/officeState.js'
 import { OfficeCanvas } from './office/components/OfficeCanvas.js'
 import { ToolOverlay } from './office/components/ToolOverlay.js'
@@ -17,6 +17,7 @@ import { DebugView } from './components/DebugView.js'
 import { DeskLabels } from './components/DeskLabels.js'
 import { PermissionModal } from './components/PermissionModal.js'
 import { PendingQueue } from './components/PendingQueue.js'
+import { AgentFeed } from './components/AgentFeed.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -124,10 +125,20 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
   const [permissionAgentId, setPermissionAgentId] = useState<number | null>(null)
+  const [feedAgentId, setFeedAgentId] = useState<number | null>(null)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const handler = () => setIsMobile(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
 
@@ -169,6 +180,7 @@ function App() {
     if (tools && tools.some((t) => t.permissionWait && !t.done)) {
       setPermissionAgentId(focusId)
     }
+    setFeedAgentId(focusId)
   }, [agentTools])
 
   const officeState = getOfficeState()
@@ -341,6 +353,14 @@ function App() {
         }
         responses={responses}
         onClose={() => setPermissionAgentId(null)}
+      />
+
+      <AgentFeed
+        agentId={feedAgentId}
+        folderName={feedAgentId !== null ? officeState.characters.get(feedAgentId)?.folderName : undefined}
+        entries={feedAgentId !== null ? (agentFeeds[feedAgentId] ?? []) : []}
+        isMobile={isMobile}
+        onClose={() => setFeedAgentId(null)}
       />
 
       {isDebugMode && (

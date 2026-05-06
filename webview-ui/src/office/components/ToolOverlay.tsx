@@ -43,7 +43,7 @@ function getActivityText(
 }
 
 /** Translate the server's tool status into plain English. */
-function prettyActivity(status: string): string {
+export function prettyActivity(status: string): string {
   // Bash: parse the command for a friendly verb
   if (status.startsWith('Running: ')) {
     return prettyBash(status.slice('Running: '.length))
@@ -87,7 +87,7 @@ function prettyActivity(status: string): string {
 }
 
 /** Map a bash command to a layman phrase. */
-function prettyBash(cmd: string): string {
+export function prettyBash(cmd: string): string {
   const c = cmd.trim().replace(/^["'`]/, '').toLowerCase()
   // Match by leading token chains
   if (/^(npm|pnpm|yarn|bun)\s+install\b/.test(c) || /^(npm|pnpm|yarn|bun)\s+i\b/.test(c) || /^(npm|pnpm|yarn|bun)\s+add\b/.test(c)) return 'Installing packages'

@@ -235,3 +235,10 @@ export interface ToolEffect {
   /** Horizontal drift offset for variety */
   drift: number
 }
+
+export type FeedEntry =
+  | { kind: 'text'; text: string; timestamp: number }
+  | { kind: 'tool_start'; toolId: string; status: string; timestamp: number }
+  | { kind: 'tool_done'; toolId: string; timestamp: number }
+  | { kind: 'tool_perm'; toolId: string; label: string; timestamp: number }
+  | { kind: 'system'; message: string; timestamp: number }
