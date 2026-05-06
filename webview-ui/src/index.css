@@ -94,3 +94,10 @@ html, body, #root {
 .pixel-safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Desktop: canvas reserves space for the right panel (matches RightPanel width). */
+@media (min-width: 769px) {
+  .pixel-canvas-shell {
+    right: 520px !important;
+  }
+}

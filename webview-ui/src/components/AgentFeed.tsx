@@ -33,7 +33,7 @@ export function AgentFeed({ agentId, folderName, entries, isMobile, onClose, onB
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#1a0a00', fontSize: 18, lineHeight: 1, cursor: 'pointer' }}>×</button>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 4, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', color: '#e6e6f0' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', color: '#e6e6f0' }}>
         {ordered.map((e, i) => <FeedCard key={i} entry={e} />)}
         {ordered.length === 0 && <div style={{ color: '#7d8694', textAlign: 'center', marginTop: 24, fontSize: 11 }}>No activity yet.</div>}
       </div>
@@ -44,13 +44,13 @@ export function AgentFeed({ agentId, folderName, entries, isMobile, onClose, onB
 function FeedCard({ entry }: { entry: FeedEntry }) {
   const ts = new Date(entry.timestamp).toLocaleTimeString()
   const card = (color: string, label: string, body: React.ReactNode) => (
-    <div style={{ background: '#16181f', border: `1px solid ${color}33`, borderLeft: `3px solid ${color}`, padding: '4px 8px', fontSize: 11 }}>
-      <div style={{ color: '#7d8694', fontSize: 9, marginBottom: 1 }}>{ts} · {label}</div>
+    <div style={{ background: '#16181f', border: `1px solid ${color}33`, borderLeft: `4px solid ${color}`, padding: '10px 14px', fontSize: 16 }}>
+      <div style={{ color: '#7d8694', fontSize: 12, marginBottom: 4 }}>{ts} · {label}</div>
       <div>{body}</div>
     </div>
   )
   switch (entry.kind) {
-    case 'text':       return card('#9ad8ff', 'assistant', <span>{entry.text.slice(0, 120)}{entry.text.length > 120 ? '…' : ''}</span>)
+    case 'text':       return card('#9ad8ff', 'assistant', <span>{entry.text.slice(0, 250)}{entry.text.length > 250 ? '…' : ''}</span>)
     case 'tool_start': return card('#FFB060', 'tool',      <span>{prettyActivity(entry.status)}</span>)
     case 'tool_done':  return card('#7be3a8', 'done',      <span style={{ color: '#7d8694' }}>tool {entry.toolId.slice(-8)} finished</span>)
     case 'tool_perm':  return card('#FF7A1A', 'perm',      <span>Awaiting permission · {entry.label}</span>)

@@ -11,9 +11,6 @@ import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.
 import { vscode } from '../../vscodeApi.js'
 import { unlockAudio } from '../../notificationSound.js'
 
-// Right panel width on desktop. Must match RightPanel component's `width` style.
-const FEED_WIDTH_CSS = 520
-
 // On desktop the office is locked to fit-to-contain — no user pan or zoom allowed.
 const isDesktopLocked = () => window.matchMedia('(min-width: 769px)').matches
 
@@ -101,11 +98,9 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         const w = canvas.width
         const h = canvas.height
 
-        // On desktop the right panel is always visible (380 CSS px). Render the
-        // office in the visible left region by reducing the effective width.
-        const dpr = window.devicePixelRatio || 1
+        // The canvas DOM container itself shrinks on desktop (see .pixel-canvas-shell),
+        // so `w` is already correct — no effectiveW hack needed.
         const isDesktop = window.matchMedia('(min-width: 769px)').matches
-        const effectiveW = isDesktop ? Math.max(0, w - FEED_WIDTH_CSS * dpr) : w
 
         // Build editor render state
         let editorRender: EditorRenderState | undefined
@@ -217,15 +212,24 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           characters: officeState.characters,
         }
 
+        // On desktop the office is right-anchored within its (now-correct) canvas:
+        // offsetX = (w - mapW)/2 + panX, set panX = (w - mapW)/2 → offsetX = w - mapW.
+        // (zoom is in device-px-per-sprite-px, so mapW is already in device px.)
+        const layoutForOffset = officeState.getLayout()
+        const mapWdp = layoutForOffset.cols * TILE_SIZE * zoom
+        const rightAlignPanX = isDesktop
+          ? Math.round((w - mapWdp) / 2)
+          : Math.round(panRef.current.x)
+
         const { offsetX, offsetY } = renderFrame(
           ctx,
-          effectiveW,
+          w,
           h,
           officeState.tileMap,
           officeState.furniture,
           officeState.getCharacters(),
           zoom,
-          panRef.current.x,
+          rightAlignPanX,
           panRef.current.y,
           selectionRender,
           editorRender,
@@ -266,11 +270,12 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         || (window.navigator as { standalone?: boolean }).standalone === true
 
       if (isDesktop) {
-        // Fit-to-contain inside the left region (canvas already excludes the panel via effectiveW).
-        // Use the smaller of the two ratios so the entire office fits with margin.
+        // Fit-to-contain inside the canvas (the canvas DOM already excludes the panel
+        // region via .pixel-canvas-shell), so cssW is correct here. Multiply by dpr so
+        // `zoom` is in device-px-per-sprite-px, matching the renderer's units.
         const officeW = layout.cols * 16
         const officeH = layout.rows * 16
-        const availW = (cssW - FEED_WIDTH_CSS) * dpr
+        const availW = cssW * dpr
         const availH = cssH * dpr
         const z = Math.min(availW / officeW, availH / officeH)
         onZoomChange(Math.max(z, 0.5))
@@ -739,10 +744,10 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   return (
     <div
       ref={containerRef}
+      className="pixel-canvas-shell"
       style={{
-        width: '100%',
-        height: '100%',
-        position: 'relative',
+        position: 'absolute',
+        inset: 0,
         overflow: 'hidden',
         background: '#1E1E2E',
       }}
