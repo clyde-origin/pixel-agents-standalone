@@ -18,6 +18,7 @@ import { DeskLabels } from './components/DeskLabels.js'
 import { PermissionModal } from './components/PermissionModal.js'
 import { PendingQueue } from './components/PendingQueue.js'
 import { AgentFeed } from './components/AgentFeed.js'
+import { RightPanel } from './components/RightPanel.js'
 import { InstallHint } from './components/InstallHint.js'
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -236,7 +237,6 @@ function App() {
         onZoomChange={editor.handleZoomChange}
         panRef={editor.panRef}
         onContextMenu={(id, x, y) => setCtxMenu({ agentId: id, x, y })}
-        feedOpen={feedAgentId !== null}
       />
 
       <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
@@ -363,13 +363,26 @@ function App() {
         onClose={() => setPermissionAgentId(null)}
       />
 
-      <AgentFeed
-        agentId={feedAgentId}
-        folderName={feedAgentId !== null ? officeState.characters.get(feedAgentId)?.folderName : undefined}
-        entries={feedAgentId !== null ? (agentFeeds[feedAgentId] ?? []) : []}
-        isMobile={isMobile}
-        onClose={() => setFeedAgentId(null)}
-      />
+      {!isMobile && (
+        <RightPanel
+          officeState={officeState}
+          agents={agents}
+          agentTools={agentTools}
+          selectedAgentId={feedAgentId}
+          agentFeeds={agentFeeds}
+          onSelect={(id) => setFeedAgentId(id)}
+          onClearSelection={() => setFeedAgentId(null)}
+        />
+      )}
+      {isMobile && (
+        <AgentFeed
+          agentId={feedAgentId}
+          folderName={feedAgentId !== null ? officeState.characters.get(feedAgentId)?.folderName : undefined}
+          entries={feedAgentId !== null ? (agentFeeds[feedAgentId] ?? []) : []}
+          isMobile={true}
+          onClose={() => setFeedAgentId(null)}
+        />
+      )}
 
       {isDebugMode && (
         <DebugView
