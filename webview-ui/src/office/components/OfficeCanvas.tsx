@@ -237,6 +237,37 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
     }
   }, [officeState, resizeCanvas, isEditMode, editorState, _editorTick, zoom, panRef])
 
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const isMobile = window.matchMedia('(max-width: 768px)').matches
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as { standalone?: boolean }).standalone === true
+    if (!isMobile && !isStandalone) return
+
+    const fit = () => {
+      const layout = officeState.getLayout()
+      if (!layout || !canvas) return
+      const dpr = window.devicePixelRatio || 1
+      const cssW = canvas.clientWidth
+      const cssH = canvas.clientHeight
+      if (cssW === 0 || cssH === 0) return
+      // Compute zoom that fills width (matches portrait aspect closely with 20x44).
+      // Use Math.max to "cover" — if the office is slightly narrower aspect than the
+      // viewport, height fills first; otherwise width does. The smaller dimension may
+      // overflow by a few px which the user can pan to see.
+      const zW = (cssW * dpr) / (layout.cols * 16)
+      const zH = (cssH * dpr) / (layout.rows * 16)
+      const cover = Math.max(zW, zH)
+      onZoomChange(cover)
+    }
+
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(canvas)
+    return () => ro.disconnect()
+  }, [officeState, onZoomChange])
+
   // Convert CSS mouse coords to world (sprite pixel) coords
   const screenToWorld = useCallback(
     (clientX: number, clientY: number) => {

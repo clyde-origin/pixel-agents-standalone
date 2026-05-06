@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const COLS = 20
-const ROWS = 36
+const ROWS = 44
 const WALL = 0, F1 = 1, F2 = 2
 
 const tiles = new Array(COLS * ROWS).fill(F1)
@@ -80,6 +80,21 @@ add('lng-table-4', 'coffee_table', 9, 33)
 for (const [c, r] of [[8, 32], [10, 32], [8, 34], [10, 34]]) add(`lng-bag-4-${c}-${r}`, 'beanbag', c, r)
 // Lamps
 for (const [c, r] of [[3, 23], [16, 23], [3, 30], [16, 30]]) add(`lng-lamp-${c}-${r}`, 'lamp', c, r)
+
+// Extra lounge content for the extended portrait (rows 35-42)
+add('lng-table-5', 'coffee_table', 5, 36)
+for (const [c, r] of [[4, 35], [6, 35], [4, 37], [6, 37]]) add(`lng-bag-5-${c}-${r}`, 'beanbag', c, r)
+add('lng-table-6', 'coffee_table', 14, 36)
+for (const [c, r] of [[13, 35], [15, 35], [13, 37], [15, 37]]) add(`lng-bag-6-${c}-${r}`, 'beanbag', c, r)
+add('lng-shelf-l-39', 'bookshelf', 1, 39)
+add('lng-shelf-r-39', 'bookshelf', 18, 39)
+add('lng-table-7', 'coffee_table', 9, 40)
+for (const [c, r] of [[7, 39], [11, 39], [7, 41], [11, 41]]) add(`lng-bag-7-${c}-${r}`, 'beanbag', c, r)
+for (const [c, r] of [[3, 38], [16, 38], [3, 41], [16, 41]]) add(`lng-lamp-x-${c}-${r}`, 'lamp', c, r)
+add('lng-plant-1', 'plant', 1, 35)
+add('lng-plant-2', 'plant', 18, 35)
+add('lng-plant-3', 'plant', 1, 41)
+add('lng-plant-4', 'plant', 18, 41)
 
 const layout = { version: 1, cols: COLS, rows: ROWS, tiles, tileColors, furniture }
 
