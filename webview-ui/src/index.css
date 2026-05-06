@@ -62,11 +62,16 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: 'FS Pixel Sans', sans-serif;
+  font-family: 'Geist', system-ui, sans-serif;
 }
 
 * {
-  font-family: 'FS Pixel Sans', sans-serif;
+  font-family: 'Geist', system-ui, sans-serif;
+}
+
+/* Monospace contexts (terminal-style cards, code blocks) */
+.pixel-mono, pre, code, .pixel-permission-modal pre {
+  font-family: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace !important;
 }
 
 /* ── Mobile breakpoint (≤ 768px) ─────────────────────────── */

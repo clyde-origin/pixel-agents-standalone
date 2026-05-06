@@ -25,8 +25,8 @@ export function RightPanel({ officeState, agents, agentTools, selectedAgentId, a
         zIndex: 800,
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
       }}
+      className="pixel-mono"
     >
       {selectedAgentId === null ? (
         <>

@@ -83,7 +83,7 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, res
       }}
     >
       <div
-        className="pixel-permission-modal"
+        className="pixel-permission-modal pixel-mono"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#0c0d12',
@@ -91,7 +91,6 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, res
           minWidth: 360,
           maxWidth: 520,
           color: '#e6e6f0',
-          fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
           boxShadow: '0 8px 0 rgba(0,0,0,0.5)',
         }}
       >

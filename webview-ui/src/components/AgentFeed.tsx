@@ -33,7 +33,7 @@ export function AgentFeed({ agentId, folderName, entries, isMobile, onClose, onB
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#1a0a00', fontSize: 24, lineHeight: 1, cursor: 'pointer' }}>×</button>
         )}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12, fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', color: '#e6e6f0' }}>
+      <div className="pixel-mono" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12, color: '#e6e6f0' }}>
         {ordered.map((e, i) => <FeedCard key={i} entry={e} />)}
         {ordered.length === 0 && <div style={{ color: '#7d8694', textAlign: 'center', marginTop: 32, fontSize: 16 }}>No activity yet.</div>}
       </div>
