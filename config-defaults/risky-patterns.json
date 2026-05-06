@@ -1,0 +1,33 @@
+{
+  "Bash": [
+    { "match": "\\brm\\s+-[a-z]*r", "label": "Recursive delete" },
+    { "match": "\\bsudo\\b", "label": "sudo" },
+    { "match": "\\bchmod\\s+[0-7]*7", "label": "World-writable chmod" },
+    { "match": "\\bchown\\b", "label": "chown" },
+    { "match": "\\bgit\\s+push\\s+(-f|--force)", "label": "Force push" },
+    { "match": "\\bgit\\s+reset\\s+--hard", "label": "git reset --hard" },
+    { "match": "\\bgit\\s+clean\\s+-[a-z]*f", "label": "git clean -f" },
+    { "match": "\\bgit\\s+branch\\s+-D\\b", "label": "Force-delete branch" },
+    { "match": "\\b(npm|pnpm|yarn|bun)\\s+publish\\b", "label": "Package publish" },
+    { "match": "\\bcurl\\b[^|]*\\|\\s*(sh|bash|zsh)", "label": "Pipe-to-shell" },
+    { "match": "\\bwget\\b[^|]*\\|\\s*(sh|bash|zsh)", "label": "Pipe-to-shell" },
+    { "match": "DROP\\s+(TABLE|DATABASE|SCHEMA|EXTENSION)", "label": "DROP" },
+    { "match": "TRUNCATE\\s+TABLE", "label": "TRUNCATE" },
+    { "match": "\\bdd\\s+if=", "label": "dd" },
+    { "match": "\\bmkfs\\b", "label": "mkfs" },
+    { "match": "\\bshutdown\\b", "label": "shutdown" },
+    { "match": "\\breboot\\b", "label": "reboot" }
+  ],
+  "filePathPatterns": [
+    { "match": "/\\.env(\\.|$)", "label": ".env file" },
+    { "match": "/\\.ssh/", "label": "SSH keys" },
+    { "match": "id_rsa\\b|id_ed25519\\b", "label": "Private key" },
+    { "match": "/\\.aws/credentials", "label": "AWS credentials" },
+    { "match": "^/etc/", "label": "/etc" },
+    { "match": "^/System/", "label": "/System" },
+    { "match": "^/Library/(?!Application Support)", "label": "/Library" }
+  ],
+  "toolNamePatterns": [
+    { "match": "^mcp__", "label": "MCP tool (external system)" }
+  ]
+}

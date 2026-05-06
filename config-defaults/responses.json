@@ -1,0 +1,25 @@
+{
+  "default": [
+    { "label": "Allow",                  "decision": "allow" },
+    { "label": "Allow this session",     "decision": "allow", "scope": "session" },
+    { "label": "Custom feedback…",       "decision": "deny",  "askForReason": true }
+  ],
+  "Bash": [
+    { "label": "Allow",                  "decision": "allow" },
+    { "label": "Allow this session",     "decision": "allow", "scope": "session" },
+    { "label": "Add --dry-run instead",  "decision": "deny",  "reason": "Re-run with --dry-run to preview only — do not actually execute." },
+    { "label": "Skip this step",         "decision": "deny",  "reason": "Skip this command and continue with the next task in the plan." },
+    { "label": "Custom feedback…",       "decision": "deny",  "askForReason": true }
+  ],
+  "Edit": [
+    { "label": "Allow",                  "decision": "allow" },
+    { "label": "Allow this session",     "decision": "allow", "scope": "session" },
+    { "label": "Show me the diff first", "decision": "deny",  "reason": "Print the proposed diff for this edit first — do not write yet." },
+    { "label": "Custom feedback…",       "decision": "deny",  "askForReason": true }
+  ],
+  "Write": [
+    { "label": "Allow",                  "decision": "allow" },
+    { "label": "Allow this session",     "decision": "allow", "scope": "session" },
+    { "label": "Custom feedback…",       "decision": "deny",  "askForReason": true }
+  ]
+}

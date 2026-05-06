@@ -1,0 +1,1 @@
+{ "timeoutSec": 30, "defaultOnTimeout": "allow", "listenAddress": "127.0.0.1" }
