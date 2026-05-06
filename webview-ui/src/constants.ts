@@ -139,4 +139,4 @@ export const SHELF_DWELL_MAX_SEC = 4.5
 /** Seconds without an active tool before an active agent walks to the library to pace. */
 export const THINKING_THRESHOLD_SEC = 30
 /** Tile rows that pacing agents walk along — the aisles between desk rows. */
-export const PACING_ROWS: number[] = [5, 9, 13]
+export const PACING_ROWS: number[] = [9, 13, 17, 21]

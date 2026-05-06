@@ -4,15 +4,15 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const COLS = 20
-const ROWS = 44
+const ROWS = 48
 const WALL = 0, F1 = 1, F2 = 2
 
 const tiles = new Array(COLS * ROWS).fill(F1)
 for (let c = 0; c < COLS; c++) { tiles[c] = WALL; tiles[(ROWS - 1) * COLS + c] = WALL }
 for (let r = 0; r < ROWS; r++) { tiles[r * COLS] = WALL; tiles[r * COLS + (COLS - 1)] = WALL }
 
-// Lounge floor: rows 18-34
-const LOUNGE_TOP = 18
+// Lounge floor: rows 22-38
+const LOUNGE_TOP = 22
 for (let r = LOUNGE_TOP; r < ROWS - 1; r++)
   for (let c = 1; c < COLS - 1; c++) tiles[r * COLS + c] = F2
 
@@ -32,9 +32,16 @@ const add = (uid, type, col, row) => furniture.push({ uid, type, col, row })
 // (pod.col, pod.col + 2). Pod span: cols pod.col .. pod.col + 3 (4 cols wide).
 const HOME_PODS = [{ col: 2 }, { col: 8 }, { col: 14 }]
 const POD_ROWS = [
-  { chair: 2,  desk: 3,  pc: 4 },
-  { chair: 10, desk: 11, pc: 12 },
+  { chair: 6,  desk: 7,  pc: 8 },
+  { chair: 14, desk: 15, pc: 16 },
 ]
+
+// Hero desk at top center: 1 chair + 1 desk (2-wide) + 1 PC.
+// Anyone can use this for merging to main. Centered horizontally at cols 9-10.
+const HERO_COL = 9  // desk occupies cols 9-10
+add('hero-merge-chair', 'chair', HERO_COL, 1)
+add('hero-merge-desk',  'desk',  HERO_COL, 2)
+add('hero-merge-pc',    'pc',    HERO_COL, 3)
 
 let podIdx = 0
 for (const pr of POD_ROWS) for (const pod of HOME_PODS) {
@@ -72,17 +79,18 @@ function addStationRow(stations, chairRow, deskRow, pcRow) {
   }
 }
 
-addStationRow(STATION_ROW_A, 6,  7,  8)
-addStationRow(STATION_ROW_B, 14, 15, 16)
+addStationRow(STATION_ROW_A, 10, 11, 12)
+addStationRow(STATION_ROW_B, 18, 19, 20)
 
 // Decor — workspace
+// Top-corner plants (row 1) frame the hero MERGE TO MAIN desk.
 add('dec-plant-1', 'plant', 1, 1)
 add('dec-plant-2', 'plant', 18, 1)
-add('dec-plant-3', 'plant', 1, 13)
-add('dec-plant-4', 'plant', 18, 13)
-add('dec-wb-1', 'whiteboard', 4, 17)
-add('dec-wb-2', 'whiteboard', 9, 17)
-add('dec-wb-3', 'whiteboard', 14, 17)
+add('dec-plant-3', 'plant', 1, 17)
+add('dec-plant-4', 'plant', 18, 17)
+add('dec-wb-1', 'whiteboard', 4, 21)
+add('dec-wb-2', 'whiteboard', 9, 21)
+add('dec-wb-3', 'whiteboard', 14, 21)
 
 // Lounge — bookshelves on side walls
 for (const r of [19, 22, 25, 28, 31]) {
