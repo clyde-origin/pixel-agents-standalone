@@ -48,6 +48,14 @@ export interface PermissionContext {
   requestId?: string
 }
 
+export interface ResponseTemplate {
+  label: string
+  decision: 'allow' | 'deny'
+  scope?: 'once' | 'session'
+  reason?: string
+  askForReason?: boolean
+}
+
 export interface ExtensionMessageState {
   agents: number[]
   selectedAgent: number | null
@@ -62,6 +70,8 @@ export interface ExtensionMessageState {
   homeDeskAssignments: Record<string, string>
   /** Per-agent rich context for the most recent pending permission. */
   permissionContexts: Record<number, PermissionContext>
+  /** Preset response buttons keyed by tool name (with `default` fallback). */
+  responses: Record<string, ResponseTemplate[]>
 }
 
 const DESK_ASSIGNMENT_STORAGE_KEY = 'pixel-agents:home-desk-assignments'
@@ -155,6 +165,7 @@ export function useExtensionMessages(
   const [workspaceFolders, setWorkspaceFolders] = useState<WorkspaceFolder[]>([])
   const [homeDeskAssignments, setHomeDeskAssignments] = useState<Record<string, string>>(() => loadHomeDeskAssignments())
   const [permissionContexts, setPermissionContexts] = useState<Record<number, PermissionContext>>({})
+  const [responses, setResponses] = useState<Record<string, ResponseTemplate[]>>({ default: [] })
   const homeDeskAssignmentsRef = useRef<Record<string, string>>(homeDeskAssignments)
   const updateHomeDeskAssignments = (next: Record<string, string>) => {
     homeDeskAssignmentsRef.current = next
@@ -541,6 +552,8 @@ export function useExtensionMessages(
       } else if (msg.type === 'settingsLoaded') {
         const soundOn = msg.soundEnabled as boolean
         setSoundEnabled(soundOn)
+      } else if (msg.type === 'responsesLoaded') {
+        setResponses(msg.responses as Record<string, ResponseTemplate[]>)
       } else if (msg.type === 'furnitureAssetsLoaded') {
         try {
           const catalog = msg.catalog as FurnitureAsset[]
@@ -559,5 +572,5 @@ export function useExtensionMessages(
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts }
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses }
 }

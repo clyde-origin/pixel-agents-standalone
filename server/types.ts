@@ -63,7 +63,8 @@ export type ServerMessage =
   | { type: "wallTilesLoaded"; sprites: unknown[] }
   | { type: "furnitureAssetsLoaded"; catalog: unknown[]; sprites: Record<string, unknown> }
   | { type: "layoutLoaded"; layout: unknown; version: number }
-  | { type: "settingsLoaded"; soundEnabled: boolean };
+  | { type: "settingsLoaded"; soundEnabled: boolean }
+  | { type: "responsesLoaded"; responses: Record<string, Array<{ label: string; decision: "allow" | "deny"; scope?: "once" | "session"; reason?: string; askForReason?: boolean }>> };
 
 // Messages sent from client to server
 export type ClientMessage =

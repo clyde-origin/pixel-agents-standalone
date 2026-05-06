@@ -1,20 +1,15 @@
+import { useState } from 'react'
 import type { ToolActivity } from '../office/types.js'
-import type { PermissionContext } from '../hooks/useExtensionMessages.js'
+import type { PermissionContext, ResponseTemplate } from '../hooks/useExtensionMessages.js'
 
 interface PermissionModalProps {
   agentId: number | null
   folderName: string | undefined
   pendingTool: ToolActivity | null
   context: PermissionContext | null
+  responses: Record<string, ResponseTemplate[]>
   onClose: () => void
 }
-
-/** Standard Claude Code permission options as shown in the terminal. */
-const TERMINAL_OPTIONS = [
-  { key: '1', label: 'Yes', sub: 'Allow this once' },
-  { key: '2', label: 'Yes, and don\'t ask again', sub: 'Allow this tool for the rest of this session' },
-  { key: '3', label: 'No, and tell me what to do', sub: 'Send the agent feedback' },
-]
 
 /** Best-effort summary of the tool input for the modal body. */
 function summarizeInput(name: string | undefined, input: Record<string, unknown> | undefined): string {
@@ -39,9 +34,13 @@ function summarizeInput(name: string | undefined, input: Record<string, unknown>
 }
 
 /** Mini-terminal style modal showing what an agent is waiting on for permission.
- *  Approve / Deny are wired to a placeholder for now — actually forwarding the answer
- *  to the live Claude Code session needs a PreToolUse hook in Claude's settings.json. */
-export function PermissionModal({ agentId, folderName, pendingTool, context, onClose }: PermissionModalProps) {
+ *  Buttons are driven by ~/.pixel-agents/responses.json — the server pushes the
+ *  config over WS and the modal renders one button per preset. "Custom feedback…"
+ *  reveals a textarea for the user to dictate what the agent should do instead. */
+export function PermissionModal({ agentId, folderName, pendingTool, context, responses, onClose }: PermissionModalProps) {
+  const [composerText, setComposerText] = useState('')
+  const [reasonComposerOpen, setReasonComposerOpen] = useState(false)
+
   if (agentId === null || !pendingTool) return null
 
   const toolName = context?.toolName ?? ''
@@ -49,18 +48,24 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, onC
   const lastText = context?.lastAssistantText?.trim() ?? ''
   const requestId = context?.requestId
   const canRespond = typeof requestId === 'string'
+  const presetButtons = responses[toolName] ?? responses.default ?? []
 
-  const respond = async (decision: 'allow' | 'deny') => {
+  async function handlePreset(btn: ResponseTemplate) {
+    if (btn.askForReason) { setReasonComposerOpen(true); return }
     if (!requestId) return
-    try {
-      await fetch('/permission/respond', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, decision }),
-      })
-    } catch {
-      /* server unreachable — ignore, modal will close anyway */
-    }
+    await fetch('/permission/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, decision: btn.decision, scope: btn.scope, reason: btn.reason }),
+    }).catch(() => {})
+    onClose()
+  }
+
+  async function sendDeny(reason: string) {
+    if (!requestId) return
+    await fetch('/permission/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, decision: 'deny', reason }),
+    }).catch(() => {})
     onClose()
   }
 
@@ -165,43 +170,40 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, onC
             )}
           </pre>
 
-          <div style={{ color: '#9aa', margin: '14px 0 6px' }}>$ choose how to respond:</div>
-          <div
-            style={{
-              background: '#16181f',
-              border: '1px solid #2a2d36',
-              padding: '8px 12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-            }}
-          >
-            {TERMINAL_OPTIONS.map((opt) => (
-              <div key={opt.key} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                <span
-                  style={{
-                    color: '#FFB060',
-                    fontWeight: 700,
-                    minWidth: 18,
-                    textAlign: 'right',
-                  }}
-                >
-                  {opt.key}.
-                </span>
-                <div>
-                  <div style={{ color: '#e6e6f0', fontWeight: 600 }}>{opt.label}</div>
-                  <div style={{ color: '#7d8694', fontSize: '11px' }}>{opt.sub}</div>
-                </div>
-              </div>
+          <div style={{ color: '#9aa', margin: '14px 0 6px' }}>$ choose a response:</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {presetButtons.map((btn, i) => (
+              <button
+                key={i}
+                onClick={() => handlePreset(btn)}
+                disabled={!canRespond}
+                style={{
+                  background: btn.decision === 'allow' ? '#FF7A1A' : '#3a1010',
+                  color: btn.decision === 'allow' ? '#1a0a00' : '#ff9b8b',
+                  border: btn.decision === 'allow' ? '1px solid #5a1f00' : '1px solid #6b2020',
+                  padding: '8px 12px', fontSize: '14px', cursor: canRespond ? 'pointer' : 'not-allowed',
+                  textAlign: 'left', fontFamily: 'inherit', fontWeight: 600,
+                }}
+              >
+                {btn.label}
+              </button>
             ))}
           </div>
 
-          <div style={{ color: '#9aa', marginTop: 14, fontSize: '12px' }}>
-            {canRespond
-              ? 'Click Allow or Deny below — the answer is forwarded to the agent\'s Claude Code session.'
-              : <>Type <strong style={{ color: '#FFB060' }}>1</strong>, <strong style={{ color: '#FFB060' }}>2</strong>, or <strong style={{ color: '#FFB060' }}>3</strong> in the agent's terminal. To click these here instead, install the <code style={{ color: '#9ad8ff' }}>PreToolUse</code> hook in <code style={{ color: '#9ad8ff' }}>~/.claude/settings.json</code>.</>
-            }
-          </div>
+          {reasonComposerOpen && (
+            <>
+              <textarea
+                value={composerText}
+                onChange={(e) => setComposerText(e.target.value)}
+                placeholder="Tell the agent what to do instead…"
+                style={{ width: '100%', minHeight: 80, marginTop: 10, background: '#16181f', color: '#e6e6f0', border: '1px solid #2a2d36', padding: '8px', fontFamily: 'inherit', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button onClick={() => setReasonComposerOpen(false)} style={{ background: 'transparent', color: '#9aa', border: '1px solid #2a2d36', padding: '6px 12px', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => sendDeny(composerText)} disabled={!composerText.trim()} style={{ background: '#FF7A1A', color: '#1a0a00', border: '1px solid #5a1f00', padding: '6px 12px', fontWeight: 700, cursor: composerText.trim() ? 'pointer' : 'not-allowed' }}>Send</button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Action bar */}
@@ -215,42 +217,6 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, onC
             background: '#0a0b10',
           }}
         >
-          <button
-            onClick={canRespond ? () => respond('deny') : undefined}
-            disabled={!canRespond}
-            title={canRespond ? 'Tell the agent to stop and try a different approach' : 'Install the PreToolUse hook to enable in-app responses'}
-            style={{
-              background: canRespond ? '#3a1010' : '#1a1d24',
-              color: canRespond ? '#ff9b8b' : '#777',
-              border: canRespond ? '1px solid #6b2020' : '1px solid #2a2d36',
-              padding: '6px 14px',
-              fontSize: '13px',
-              cursor: canRespond ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit',
-              letterSpacing: '0.3px',
-              fontWeight: 600,
-            }}
-          >
-            Deny
-          </button>
-          <button
-            onClick={canRespond ? () => respond('allow') : undefined}
-            disabled={!canRespond}
-            title={canRespond ? 'Allow this tool call' : 'Install the PreToolUse hook to enable in-app responses'}
-            style={{
-              background: canRespond ? '#FF7A1A' : '#3a2810',
-              color: canRespond ? '#1a0a00' : '#aa9577',
-              border: canRespond ? '1px solid #5a1f00' : '1px solid #5a3a18',
-              padding: '6px 14px',
-              fontSize: '13px',
-              cursor: canRespond ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit',
-              letterSpacing: '0.3px',
-              fontWeight: 700,
-            }}
-          >
-            Allow
-          </button>
           <button
             onClick={onClose}
             style={{

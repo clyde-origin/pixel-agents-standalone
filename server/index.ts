@@ -108,6 +108,9 @@ const policy = new PermissionPolicy(riskyCfg, new Set(watchListCfg.watch));
 watchConfigFile(POLICY_PATH, DEFAULT_POLICY, (c) => { policyCfg = c });
 watchConfigFile(RISKY_PATH, DEFAULT_RISKY, (c) => { riskyCfg = c; policy.updateConfig(c) });
 watchConfigFile(WATCH_LIST_PATH, DEFAULT_WATCH_LIST, (c) => { watchListCfg = c; policy.updateWatchList(new Set(c.watch)) });
+watchConfigFile(RESPONSES_PATH, DEFAULT_RESPONSES, (c) => {
+  broadcast({ type: "responsesLoaded", responses: c })
+})
 
 // ── Pending permission requests ──────────────────────────────────────
 interface PendingPermission {
@@ -268,6 +271,11 @@ function sendInitialData(ws: WebSocket): void {
     }
   }
   ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, agentMeta }));
+
+  ws.send(JSON.stringify({
+    type: "responsesLoaded",
+    responses: loadOrInitConfig(RESPONSES_PATH, DEFAULT_RESPONSES),
+  }))
 
   // Send layout (must come after existingAgents — the hook buffers agents until layout arrives)
   if (currentLayout) {
