@@ -827,18 +827,12 @@ export class OfficeState {
     }
   }
 
-  /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
+  /** Determine what trip (if any) the agent should currently be on.
+   *  Active agents stay at their desk — only idle (turn-ended) agents go on a trip. */
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
     // Idle (turn ended) → relax on a beanbag
     if (!ch.isActive) return 'beanbag'
-    // Active + reading tool → stand at a bookshelf
-    if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) {
-      return 'bookshelf'
-    }
-    // Active but no tool for a while → walk to the library and pace
-    if (ch.lastNoToolTime !== null && now - ch.lastNoToolTime > THINKING_THRESHOLD_SEC) {
-      return 'pacing'
-    }
+    // Active agents — including reading tools and thinking gaps — stay at their desk.
     return null
   }
 
