@@ -27,9 +27,10 @@ interface OfficeCanvasProps {
   onZoomChange: (zoom: number) => void
   panRef: React.MutableRefObject<{ x: number; y: number }>
   onContextMenu?: (agentId: number, x: number, y: number) => void
+  feedOpen?: boolean
 }
 
-export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef, onContextMenu }: OfficeCanvasProps) {
+export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef, onContextMenu, feedOpen }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -94,6 +95,14 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         // Canvas dimensions are in device pixels
         const w = canvas.width
         const h = canvas.height
+
+        // When the feed is open on desktop, render the office centered in the
+        // visible left region (canvas width minus the feed's 380 CSS px width).
+        const dpr = window.devicePixelRatio || 1
+        const isDesktop = window.matchMedia('(min-width: 769px)').matches
+        const feedOpenAndDesktop = isDesktop && (feedOpen ?? false)
+        const FEED_WIDTH_CSS = 380  // matches the AgentFeed component's desktop width
+        const effectiveW = feedOpenAndDesktop ? Math.max(0, w - FEED_WIDTH_CSS * dpr) : w
 
         // Build editor render state
         let editorRender: EditorRenderState | undefined
@@ -206,7 +215,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
 
         const { offsetX, offsetY } = renderFrame(
           ctx,
-          w,
+          effectiveW,
           h,
           officeState.tileMap,
           officeState.furniture,
@@ -235,7 +244,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
       stop()
       observer.disconnect()
     }
-  }, [officeState, resizeCanvas, isEditMode, editorState, _editorTick, zoom, panRef])
+  }, [officeState, resizeCanvas, isEditMode, editorState, _editorTick, zoom, panRef, feedOpen])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -591,7 +600,6 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           officeState.cameraFollowId = null
         } else {
           officeState.selectedAgentId = hitId
-          officeState.cameraFollowId = hitId
         }
         officeState.hoveredAgentId = hitId
         onClick(hitId) // still focus terminal

@@ -236,6 +236,7 @@ function App() {
         onZoomChange={editor.handleZoomChange}
         panRef={editor.panRef}
         onContextMenu={(id, x, y) => setCtxMenu({ agentId: id, x, y })}
+        feedOpen={feedAgentId !== null}
       />
 
       <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
