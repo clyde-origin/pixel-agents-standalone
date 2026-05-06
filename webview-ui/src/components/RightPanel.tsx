@@ -19,7 +19,7 @@ export function RightPanel({ officeState, agents, agentTools, selectedAgentId, a
       style={{
         position: 'fixed',
         right: 0, top: 0, bottom: 0,
-        width: 380,
+        width: 520,
         background: '#0c0d12',
         borderLeft: '2px solid #FF7A1A',
         zIndex: 800,

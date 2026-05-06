@@ -11,6 +11,12 @@ import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.
 import { vscode } from '../../vscodeApi.js'
 import { unlockAudio } from '../../notificationSound.js'
 
+// Right panel width on desktop. Must match RightPanel component's `width` style.
+const FEED_WIDTH_CSS = 520
+
+// On desktop the office is locked to fit-to-contain — no user pan or zoom allowed.
+const isDesktopLocked = () => window.matchMedia('(min-width: 769px)').matches
+
 interface OfficeCanvasProps {
   officeState: OfficeState
   onClick: (agentId: number) => void
@@ -99,7 +105,6 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         // office in the visible left region by reducing the effective width.
         const dpr = window.devicePixelRatio || 1
         const isDesktop = window.matchMedia('(min-width: 769px)').matches
-        const FEED_WIDTH_CSS = 380  // matches the RightPanel component's desktop width
         const effectiveW = isDesktop ? Math.max(0, w - FEED_WIDTH_CSS * dpr) : w
 
         // Build editor render state
@@ -180,8 +185,9 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           }
         }
 
-        // Camera follow: smoothly center on followed agent
-        if (officeState.cameraFollowId !== null) {
+        // Camera follow: smoothly center on followed agent.
+        // Skip on desktop — pan is locked and the office is centered via fit-to-contain.
+        if (officeState.cameraFollowId !== null && !isDesktop) {
           const followCh = officeState.characters.get(officeState.cameraFollowId)
           if (followCh) {
             const layout = officeState.getLayout()
@@ -247,11 +253,6 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const isMobile = window.matchMedia('(max-width: 768px)').matches
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as { standalone?: boolean }).standalone === true
-    if (!isMobile && !isStandalone) return
-
     const fit = () => {
       const layout = officeState.getLayout()
       if (!layout || !canvas) return
@@ -259,10 +260,28 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
       const cssW = canvas.clientWidth
       const cssH = canvas.clientHeight
       if (cssW === 0 || cssH === 0) return
-      // Compute zoom that fills width (matches portrait aspect closely with 20x44).
-      // Use Math.max to "cover" — if the office is slightly narrower aspect than the
-      // viewport, height fills first; otherwise width does. The smaller dimension may
-      // overflow by a few px which the user can pan to see.
+
+      const isDesktop = window.matchMedia('(min-width: 769px)').matches
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+        || (window.navigator as { standalone?: boolean }).standalone === true
+
+      if (isDesktop) {
+        // Fit-to-contain inside the left region (canvas already excludes the panel via effectiveW).
+        // Use the smaller of the two ratios so the entire office fits with margin.
+        const officeW = layout.cols * 16
+        const officeH = layout.rows * 16
+        const availW = (cssW - FEED_WIDTH_CSS) * dpr
+        const availH = cssH * dpr
+        const z = Math.min(availW / officeW, availH / officeH)
+        onZoomChange(Math.max(z, 0.5))
+        // Snap pan to 0 so the office is centered in its region every frame.
+        panRef.current = { x: 0, y: 0 }
+        return
+      }
+
+      if (!isStandalone) return
+
+      // Mobile / PWA standalone — cover-fit (existing behavior).
       const zW = (cssW * dpr) / (layout.cols * 16)
       const zH = (cssH * dpr) / (layout.rows * 16)
       const cover = Math.max(zW, zH)
@@ -273,7 +292,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
     const ro = new ResizeObserver(fit)
     ro.observe(canvas)
     return () => ro.disconnect()
-  }, [officeState, onZoomChange])
+  }, [officeState, onZoomChange, panRef])
 
   // Convert CSS mouse coords to world (sprite pixel) coords
   const screenToWorld = useCallback(
@@ -446,6 +465,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
       // Middle mouse button (button 1) starts panning
       if (e.button === 1) {
         e.preventDefault()
+        // Desktop is locked to fit-to-contain — disallow middle-mouse pan.
+        if (isDesktopLocked()) return
         // Break camera follow on manual pan
         officeState.cameraFollowId = null
         isPanningRef.current = true
@@ -684,6 +705,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault()
+      // Desktop is locked: ignore wheel pan and zoom entirely.
+      if (isDesktopLocked()) return
       if (e.ctrlKey || e.metaKey) {
         // Accumulate scroll delta, step zoom when threshold crossed
         zoomAccumulatorRef.current += e.deltaY
