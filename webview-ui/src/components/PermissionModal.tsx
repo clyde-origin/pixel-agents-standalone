@@ -83,6 +83,7 @@ export function PermissionModal({ agentId, folderName, pendingTool, context, res
       }}
     >
       <div
+        className="pixel-permission-modal"
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#0c0d12',

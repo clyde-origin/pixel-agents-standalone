@@ -68,3 +68,29 @@ html, body, #root {
 * {
   font-family: 'FS Pixel Sans', sans-serif;
 }
+
+/* ── Mobile breakpoint (≤ 768px) ─────────────────────────── */
+@media (max-width: 768px) {
+  .pixel-permission-modal {
+    /* Switch to bottom sheet */
+    inset: auto 0 0 0;
+    transform: none;
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 16px 16px 0 0;
+    max-height: 85vh;
+  }
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .pixel-context-menu button {
+    padding: 12px 14px;
+    font-size: 15px;
+  }
+}
+
+/* iOS / Android safe area */
+.pixel-safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
