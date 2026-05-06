@@ -40,6 +40,14 @@ export interface WorkspaceFolder {
   path: string
 }
 
+export interface PermissionContext {
+  toolName?: string
+  toolInput?: Record<string, unknown>
+  lastAssistantText?: string
+  /** Set when a hook-driven permission request is pending — enables Allow/Deny in the modal. */
+  requestId?: string
+}
+
 export interface ExtensionMessageState {
   agents: number[]
   selectedAgent: number | null
@@ -50,6 +58,76 @@ export interface ExtensionMessageState {
   layoutReady: boolean
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> }
   workspaceFolders: WorkspaceFolder[]
+  /** Map of home-desk uid prefix (e.g. "home-0") → project name claimed at that desk. */
+  homeDeskAssignments: Record<string, string>
+  /** Per-agent rich context for the most recent pending permission. */
+  permissionContexts: Record<number, PermissionContext>
+}
+
+const DESK_ASSIGNMENT_STORAGE_KEY = 'pixel-agents:home-desk-assignments'
+
+/** Read claimed home desks from localStorage. Returns deskKey ("home-0") → projectName. */
+function loadHomeDeskAssignments(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(DESK_ASSIGNMENT_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveHomeDeskAssignments(map: Record<string, string>): void {
+  try {
+    localStorage.setItem(DESK_ASSIGNMENT_STORAGE_KEY, JSON.stringify(map))
+  } catch { /* storage full or disabled — ignore */ }
+}
+
+/** Number of home desks defined in the layout (uid prefix `home-N-…`). */
+function listHomeDeskKeys(os: OfficeState): string[] {
+  const keys = new Set<string>()
+  for (const f of os.getLayout().furniture) {
+    const m = /^(home-\d+)-/.exec(f.uid)
+    if (m) keys.add(m[1])
+  }
+  return Array.from(keys).sort()
+}
+
+/** Look up (and claim if needed) the seat for an agent's home desk based on project name. */
+function pickHomeSeatId(
+  os: OfficeState,
+  folderName: string | undefined,
+  assignments: Record<string, string>,
+): { seatId: string | null; updated: Record<string, string> } {
+  if (!folderName) return { seatId: null, updated: assignments }
+  const homeKeys = listHomeDeskKeys(os)
+  if (homeKeys.length === 0) return { seatId: null, updated: assignments }
+
+  // Already claimed for this project? Reuse the same desk (if its seat exists & is free).
+  for (const key of homeKeys) {
+    if (assignments[key] === folderName) {
+      const seatId = `${key}-chair`
+      const seat = os.seats.get(seatId)
+      if (seat && !seat.assigned) return { seatId, updated: assignments }
+      // Seat already taken (concurrent claim) — keep the assignment but spawn elsewhere.
+      return { seatId: null, updated: assignments }
+    }
+  }
+
+  // Claim the first unassigned home desk for this project.
+  for (const key of homeKeys) {
+    if (!assignments[key]) {
+      const seatId = `${key}-chair`
+      const seat = os.seats.get(seatId)
+      if (seat && !seat.assigned) {
+        const updated = { ...assignments, [key]: folderName }
+        return { seatId, updated }
+      }
+    }
+  }
+
+  // All home desks claimed by other projects — fall back to the open seat pool.
+  return { seatId: null, updated: assignments }
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -75,6 +153,14 @@ export function useExtensionMessages(
   const [layoutReady, setLayoutReady] = useState(false)
   const [loadedAssets, setLoadedAssets] = useState<{ catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined>()
   const [workspaceFolders, setWorkspaceFolders] = useState<WorkspaceFolder[]>([])
+  const [homeDeskAssignments, setHomeDeskAssignments] = useState<Record<string, string>>(() => loadHomeDeskAssignments())
+  const [permissionContexts, setPermissionContexts] = useState<Record<number, PermissionContext>>({})
+  const homeDeskAssignmentsRef = useRef<Record<string, string>>(homeDeskAssignments)
+  const updateHomeDeskAssignments = (next: Record<string, string>) => {
+    homeDeskAssignmentsRef.current = next
+    setHomeDeskAssignments(next)
+    saveHomeDeskAssignments(next)
+  }
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false)
@@ -102,9 +188,20 @@ export function useExtensionMessages(
           // Default layout — snapshot whatever OfficeState built
           onLayoutLoaded?.(os.getLayout())
         }
-        // Add buffered agents now that layout (and seats) are correct
+        // Add buffered agents now that layout (and seats) are correct.
+        // For each agent, prefer their project's home desk (claim one if needed).
+        let assignments = homeDeskAssignmentsRef.current
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName)
+          let seatId = p.seatId
+          if (!seatId) {
+            const r = pickHomeSeatId(os, p.folderName, assignments)
+            if (r.seatId) seatId = r.seatId
+            assignments = r.updated
+          }
+          os.addAgent(p.id, p.palette, p.hueShift, seatId, true, p.folderName)
+        }
+        if (assignments !== homeDeskAssignmentsRef.current) {
+          updateHomeDeskAssignments(assignments)
         }
         pendingAgents = []
         layoutReadyRef.current = true
@@ -117,7 +214,12 @@ export function useExtensionMessages(
         const folderName = msg.folderName as string | undefined
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]))
         setSelectedAgent(id)
-        os.addAgent(id, undefined, undefined, undefined, undefined, folderName)
+        // Try to land them at their project's home desk.
+        const { seatId, updated } = pickHomeSeatId(os, folderName, homeDeskAssignmentsRef.current)
+        if (updated !== homeDeskAssignmentsRef.current) {
+          updateHomeDeskAssignments(updated)
+        }
+        os.addAgent(id, undefined, undefined, seatId ?? undefined, undefined, folderName)
         saveAgentSeats(os)
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number
@@ -144,7 +246,31 @@ export function useExtensionMessages(
         // Remove all sub-agent characters belonging to this agent
         os.removeAllSubagents(id)
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
+
+        // Release the agent's home-desk claim if no other agent of the same project is around.
+        const departing = os.characters.get(id)
+        const departingProject = departing?.folderName
         os.removeAgent(id)
+        if (departingProject) {
+          let stillThere = false
+          for (const ch of os.characters.values()) {
+            if (ch.id !== id && ch.folderName === departingProject) {
+              stillThere = true
+              break
+            }
+          }
+          if (!stillThere) {
+            const next = { ...homeDeskAssignmentsRef.current }
+            let changed = false
+            for (const [key, proj] of Object.entries(next)) {
+              if (proj === departingProject) {
+                delete next[key]
+                changed = true
+              }
+            }
+            if (changed) updateHomeDeskAssignments(next)
+          }
+        }
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[]
         const meta = (msg.agentMeta || {}) as Record<number, { palette?: number; hueShift?: number; seatId?: string }>
@@ -176,6 +302,7 @@ export function useExtensionMessages(
         const toolName = extractToolName(status)
         os.setAgentTool(id, toolName)
         os.setAgentActive(id, true)
+        os.setAgentBetweenTools(id, false)  // a tool is now running
         os.clearPermissionBubble(id)
         // Create sub-agent character for Task tool subtasks
         if (status.startsWith('Subtask:')) {
@@ -192,13 +319,19 @@ export function useExtensionMessages(
         setAgentTools((prev) => {
           const list = prev[id]
           if (!list) return prev
-          return {
-            ...prev,
-            [id]: list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t)),
+          const newList = list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t))
+          // If this was the last active tool, mark the agent as "between tools" so the
+          // trip system can start its think-time countdown.
+          const stillActive = newList.some((t) => !t.done)
+          if (!stillActive) {
+            os.setAgentBetweenTools(id, true)
           }
+          return { ...prev, [id]: newList }
         })
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number
+        // Turn ended — clear think-timer so they don't immediately stand up next turn.
+        os.setAgentBetweenTools(id, false)
         setAgentTools((prev) => {
           if (!(id in prev)) return prev
           const next = { ...prev }
@@ -246,7 +379,67 @@ export function useExtensionMessages(
             [id]: list.map((t) => (t.done ? t : { ...t, permissionWait: true })),
           }
         })
+        // Capture rich context (tool name, raw input, last assistant text) for the modal.
+        const ctx: PermissionContext = {
+          toolName: typeof msg.toolName === 'string' ? msg.toolName : undefined,
+          toolInput: (msg.toolInput && typeof msg.toolInput === 'object')
+            ? (msg.toolInput as Record<string, unknown>)
+            : undefined,
+          lastAssistantText: typeof msg.lastAssistantText === 'string' ? msg.lastAssistantText : undefined,
+        }
+        setPermissionContexts((prev) => ({ ...prev, [id]: ctx }))
         os.showPermissionBubble(id)
+      } else if (msg.type === 'agentPermissionRequest') {
+        // Hook-driven request — buttons in the modal can now actually answer.
+        const id = msg.id as number
+        const ctx: PermissionContext = {
+          requestId: typeof msg.requestId === 'string' ? msg.requestId : undefined,
+          toolName: typeof msg.toolName === 'string' ? msg.toolName : undefined,
+          toolInput: (msg.toolInput && typeof msg.toolInput === 'object')
+            ? (msg.toolInput as Record<string, unknown>)
+            : undefined,
+          lastAssistantText: typeof msg.lastAssistantText === 'string' ? msg.lastAssistantText : undefined,
+        }
+        setPermissionContexts((prev) => ({ ...prev, [id]: ctx }))
+        // Also surface the bubble + permissionWait flag so the sprite shows "!" and the
+        // RESPOND? button appears even before the heuristic timer would have fired.
+        setAgentTools((prev) => {
+          const list = prev[id] || []
+          // Add a synthetic "tool" entry tied to this requestId so existing logic shows the !
+          const synth = { toolId: ctx.requestId ?? `req-${Date.now()}`, status: ctx.toolName ?? 'pending', done: false, permissionWait: true }
+          if (list.some((t) => t.toolId === synth.toolId)) return prev
+          return { ...prev, [id]: [...list, synth] }
+        })
+        os.showPermissionBubble(id)
+      } else if (msg.type === 'agentPermissionResolved') {
+        const requestId = msg.requestId as string
+        // Clear any modal context that still references this requestId
+        setPermissionContexts((prev) => {
+          let changed = false
+          const next: typeof prev = {}
+          for (const [k, v] of Object.entries(prev)) {
+            if (v.requestId === requestId) {
+              changed = true
+              continue
+            }
+            next[Number(k)] = v
+          }
+          return changed ? next : prev
+        })
+        // Clear the synthetic tool entry from agentTools and the permission bubble
+        setAgentTools((prev) => {
+          let changed = false
+          const next: typeof prev = {}
+          for (const [k, list] of Object.entries(prev)) {
+            const filtered = list.filter((t) => t.toolId !== requestId)
+            if (filtered.length !== list.length) {
+              changed = true
+              if (filtered.length === 0) continue
+            }
+            next[Number(k)] = filtered
+          }
+          return changed ? next : prev
+        })
       } else if (msg.type === 'subagentToolPermission') {
         const id = msg.id as number
         const parentToolId = msg.parentToolId as string
@@ -266,6 +459,12 @@ export function useExtensionMessages(
             ...prev,
             [id]: list.map((t) => (t.permissionWait ? { ...t, permissionWait: false } : t)),
           }
+        })
+        setPermissionContexts((prev) => {
+          if (!(id in prev)) return prev
+          const next = { ...prev }
+          delete next[id]
+          return next
         })
         os.clearPermissionBubble(id)
         // Also clear permission bubbles on all sub-agent characters of this parent
@@ -360,5 +559,5 @@ export function useExtensionMessages(
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders }
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts }
 }

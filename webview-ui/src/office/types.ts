@@ -91,6 +91,8 @@ export const FurnitureType = {
   CHAIR: 'chair',
   PC: 'pc',
   LAMP: 'lamp',
+  BEANBAG: 'beanbag',
+  COFFEE_TABLE: 'coffee_table',
 } as const
 export type FurnitureType = (typeof FurnitureType)[keyof typeof FurnitureType]
 
@@ -195,4 +197,41 @@ export interface Character {
   matrixEffectSeeds: number[]
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string
+  /** Activity intensity 0-1 — bumped on each tool start, decays over time. Drives typing speed. */
+  intensity: number
+  /** Seconds until next stretch gesture while active */
+  stretchTimer: number
+  /** True while playing a brief stand-up gesture */
+  stretching: boolean
+  /** Remaining stretch duration */
+  stretchRemaining: number
+  /** Current "field trip" away from the home desk, or null when at desk / wandering.
+   *  - 'beanbag'   — sitting on a beanbag while idle (turn ended)
+   *  - 'bookshelf' — standing at a bookshelf while a Read/Grep/etc tool is running
+   *  - 'pacing'    — walking back and forth in the library area while thinking */
+  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | null
+  /** Tile the agent is occupying (or walking toward) for the current trip. */
+  tripTile: { col: number; row: number } | null
+  /** Home seat to return to when the trip ends. Saved when the trip begins. */
+  originalSeatId: string | null
+  /** Time (in seconds, performance.now()/1000) since the agent last had any active tool.
+   *  Null while a tool is running. Used to detect long "thinking" gaps. */
+  lastNoToolTime: number | null
+}
+
+export interface ToolEffect {
+  /** Unique id for keying */
+  id: number
+  /** World x (px) */
+  x: number
+  /** World y (px) */
+  y: number
+  /** Symbol kind */
+  kind: 'edit' | 'bash' | 'read' | 'search' | 'task' | 'permission' | 'spark'
+  /** Seconds since spawn */
+  age: number
+  /** Total lifetime in seconds */
+  lifetime: number
+  /** Horizontal drift offset for variety */
+  drift: number
 }

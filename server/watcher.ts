@@ -72,10 +72,9 @@ export class JsonlWatcher extends EventEmitter {
     if (this.files.has(filePath)) return;
 
     const sessionId = basename(filePath, ".jsonl");
-    const projectDirName = basename(dirname(filePath));
-    // Extract short project name: "-Users-alice-Documents-myproject-657" -> "657"
-    const parts = projectDirName.split("-").filter(Boolean);
-    const projectName = parts[parts.length - 1] || sessionId.slice(0, 8);
+    // Try to discover the real project name by reading the cwd field from the
+    // first few records. Fall back to a smart parse of the encoded folder name.
+    const projectName = extractProjectName(filePath) ?? fallbackProjectName(filePath, sessionId);
 
     const file: WatchedFile = {
       path: filePath,
@@ -109,6 +108,9 @@ export class JsonlWatcher extends EventEmitter {
         this.emit("fileRemoved", file);
       }
     }
+    // Chokidar's `add` event is unreliable for new jsonl files appearing
+    // under existing subdirs of ~/.claude/projects on macOS. Rescan as a fallback.
+    this.scanForActiveFiles();
   }
 
   private readNewLines(file: WatchedFile): void {
@@ -141,4 +143,69 @@ export class JsonlWatcher extends EventEmitter {
   getActiveFiles(): WatchedFile[] {
     return Array.from(this.files.values());
   }
+}
+
+const PROJECT_NAME_SCAN_BYTES = 512_000;
+
+/** Read the head of a jsonl file and return the most common non-trivial cwd basename.
+ *  Sessions are often launched from a home dir but most records carry the project dir cwd. */
+function extractProjectName(filePath: string): string | null {
+  try {
+    const stat = statSync(filePath);
+    const len = Math.min(stat.size, PROJECT_NAME_SCAN_BYTES);
+    if (len === 0) return null;
+    const fd = openSync(filePath, "r");
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, 0);
+    closeSync(fd);
+    const text = buf.toString("utf-8");
+    const counts = new Map<string, number>();
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let rec: Record<string, unknown>;
+      try {
+        rec = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      const cwd = typeof rec.cwd === "string" ? rec.cwd : null;
+      if (cwd) counts.set(cwd, (counts.get(cwd) ?? 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    // Prefer the most common cwd that isn't a "shallow" dir like /Users/<name> or /home/<name>.
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    for (const [cwd] of sorted) {
+      if (!isShallowDir(cwd)) {
+        const name = basename(cwd);
+        if (name) return name;
+      }
+    }
+    // All cwds were shallow — use the most common as-is.
+    const name = basename(sorted[0][0]);
+    return name || null;
+  } catch {
+    /* unreadable */
+  }
+  return null;
+}
+
+/** /Users/foo or /home/foo or / itself — too generic to be a project. */
+function isShallowDir(p: string): boolean {
+  const parts = p.split("/").filter(Boolean);
+  if (parts.length <= 2) return true;
+  return false;
+}
+
+/** Fallback project name from the encoded folder. Uses the deepest non-trivial segment. */
+function fallbackProjectName(filePath: string, sessionId: string): string {
+  const projectDirName = basename(dirname(filePath));
+  // "-Users-alice-Code-myproject" -> ["Users","alice","Code","myproject"]
+  const parts = projectDirName.split("-").filter(Boolean);
+  // Skip generic noise from the front. Keep the last meaningful segment.
+  const skip = new Set(["Users", "Documents", "Code", "src", "home"]);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (!skip.has(parts[i])) return parts[i];
+  }
+  return parts[parts.length - 1] || sessionId.slice(0, 8);
 }

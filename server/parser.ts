@@ -1,5 +1,5 @@
 import * as path from "path";
-import type { TrackedAgent, ServerMessage } from "./types.js";
+import type { TrackedAgent, ServerMessage, ActiveTool } from "./types.js";
 
 const READING_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch"]);
 const PERMISSION_EXEMPT_TOOLS = new Set(["Task", "AskUserQuestion"]);
@@ -106,29 +106,38 @@ function startPermissionTimer(
     agent.id,
     setTimeout(() => {
       permissionTimers.delete(agent.id);
-      // Check if there are still active non-exempt tools
-      let hasNonExempt = false;
-      for (const [, toolName] of agent.activeToolNames) {
-        if (!PERMISSION_EXEMPT_TOOLS.has(toolName)) {
-          hasNonExempt = true;
+      // Find the first non-exempt active tool — its details go in the modal.
+      let pending: ActiveTool | undefined;
+      for (const [, t] of agent.activeTools) {
+        if (!PERMISSION_EXEMPT_TOOLS.has(t.toolName)) {
+          pending = t;
           break;
         }
       }
-      if (!hasNonExempt) {
-        // Also check subagent tools
+      if (!pending) {
+        // Fall back: scan subagent tools (only names known) — no rich context available there.
         for (const [, subNames] of agent.activeSubagentToolNames) {
           for (const [, toolName] of subNames) {
             if (!PERMISSION_EXEMPT_TOOLS.has(toolName)) {
-              hasNonExempt = true;
-              break;
+              if (!agent.permissionSent) {
+                agent.permissionSent = true;
+                emit({ type: "agentToolPermission", id: agent.id, toolName });
+              }
+              return;
             }
           }
-          if (hasNonExempt) break;
         }
+        return;
       }
-      if (hasNonExempt && !agent.permissionSent) {
+      if (!agent.permissionSent) {
         agent.permissionSent = true;
-        emit({ type: "agentToolPermission", id: agent.id });
+        emit({
+          type: "agentToolPermission",
+          id: agent.id,
+          toolName: pending.toolName,
+          toolInput: pending.input,
+          lastAssistantText: agent.lastAssistantText || undefined,
+        });
       }
     }, PERMISSION_TIMER_DELAY_MS),
   );
@@ -170,6 +179,16 @@ function handleAssistantMessage(
   const content = message.content as Array<Record<string, unknown>>;
   if (!Array.isArray(content)) return;
 
+  // Capture the latest assistant text (visible to the user in the terminal).
+  // Concatenate all `text` blocks in this message; they form one rendered chunk.
+  const textBlocks = content
+    .filter((b) => b.type === "text" && typeof b.text === "string")
+    .map((b) => (b.text as string).trim())
+    .filter((s) => s.length > 0);
+  if (textBlocks.length > 0) {
+    agent.lastAssistantText = textBlocks.join("\n\n");
+  }
+
   const hasToolUse = content.some((b) => b.type === "tool_use");
 
   if (hasToolUse) {
@@ -186,7 +205,7 @@ function handleAssistantMessage(
         const input = (block.input as Record<string, unknown>) || {};
         const status = formatToolStatus(toolName, input);
 
-        agent.activeTools.set(toolId, { toolId, toolName, status });
+        agent.activeTools.set(toolId, { toolId, toolName, status, input });
         agent.activeToolNames.set(toolId, toolName);
         agent.lastActivityTime = Date.now();
 

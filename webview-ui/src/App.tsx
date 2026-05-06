@@ -14,6 +14,8 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js'
 import { ZoomControls } from './components/ZoomControls.js'
 import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
+import { DeskLabels } from './components/DeskLabels.js'
+import { PermissionModal } from './components/PermissionModal.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -121,11 +123,16 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
+  const [permissionAgentId, setPermissionAgentId] = useState<number | null>(null)
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
+
+  const handleRespondToAgent = useCallback((id: number) => {
+    setPermissionAgentId(id)
+  }, [])
 
   const handleSelectAgent = useCallback((id: number) => {
     vscode.postMessage({ type: 'focusAgent', id })
@@ -156,7 +163,12 @@ function App() {
     const meta = os.subagentMeta.get(agentId)
     const focusId = meta ? meta.parentAgentId : agentId
     vscode.postMessage({ type: 'focusAgent', id: focusId })
-  }, [])
+    // If the clicked (or parent) agent is waiting on permission, pop the modal too.
+    const tools = agentTools[focusId]
+    if (tools && tools.some((t) => t.permissionWait && !t.done)) {
+      setPermissionAgentId(focusId)
+    }
+  }, [agentTools])
 
   const officeState = getOfficeState()
 
@@ -285,6 +297,13 @@ function App() {
         )
       })()}
 
+      <DeskLabels
+        officeState={officeState}
+        containerRef={containerRef}
+        zoom={editor.zoom}
+        panRef={editor.panRef}
+      />
+
       <ToolOverlay
         officeState={officeState}
         agents={agents}
@@ -294,6 +313,27 @@ function App() {
         zoom={editor.zoom}
         panRef={editor.panRef}
         onCloseAgent={handleCloseAgent}
+        onRespondToAgent={handleRespondToAgent}
+      />
+
+      <PermissionModal
+        agentId={permissionAgentId}
+        folderName={
+          permissionAgentId !== null
+            ? officeState.characters.get(permissionAgentId)?.folderName
+            : undefined
+        }
+        pendingTool={
+          permissionAgentId !== null
+            ? agentTools[permissionAgentId]?.find((t) => t.permissionWait && !t.done) ?? null
+            : null
+        }
+        context={
+          permissionAgentId !== null
+            ? permissionContexts[permissionAgentId] ?? null
+            : null
+        }
+        onClose={() => setPermissionAgentId(null)}
       />
 
       {isDebugMode && (

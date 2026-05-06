@@ -272,24 +272,77 @@ export const LAMP_SPRITE: SpriteData = (() => {
   ]
 })()
 
+/** Beanbag: 16x16 squashy lounge cushion */
+export const BEANBAG_SPRITE: SpriteData = (() => {
+  const O = '#5A2E1A' // outline / shadow
+  const M = '#A85534' // mid fabric
+  const L = '#D17A52' // light fabric
+  const H = '#EFB48F' // highlight
+  return [
+    [_, _, _, _, O, O, O, O, O, O, _, _, _, _, _, _],
+    [_, _, _, O, M, L, L, L, L, M, O, _, _, _, _, _],
+    [_, _, O, M, L, L, H, H, L, L, M, O, _, _, _, _],
+    [_, O, M, L, L, H, H, H, H, L, L, M, O, _, _, _],
+    [O, M, L, L, H, H, H, H, H, H, L, L, M, O, _, _],
+    [O, M, L, L, H, H, H, H, H, H, L, L, L, M, O, _],
+    [O, M, L, L, H, H, H, H, H, H, L, L, L, L, M, O],
+    [O, M, L, L, L, H, H, H, H, L, L, L, L, L, M, O],
+    [O, M, L, L, L, L, L, L, L, L, L, L, L, M, O, _],
+    [O, M, M, L, L, L, L, L, L, L, L, M, M, O, _, _],
+    [_, O, M, M, L, L, L, L, L, L, M, M, O, _, _, _],
+    [_, _, O, M, M, M, L, L, M, M, M, O, _, _, _, _],
+    [_, _, _, O, O, M, M, M, M, O, O, _, _, _, _, _],
+    [_, _, _, _, _, O, O, O, O, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Coffee table: 16x16 low table with mug rings */
+export const COFFEE_TABLE_SPRITE: SpriteData = (() => {
+  const W = '#7B5230' // wood
+  const D = '#4A2F1A' // dark wood
+  const M = '#A07550' // mid wood
+  const C = '#FFE7BD' // mug ring (cream)
+  return [
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, D, D, D, D, D, D, D, D, D, D, D, _, _, _],
+    [_, D, M, M, M, M, M, M, M, M, M, M, M, D, _, _],
+    [_, D, M, W, W, W, W, W, W, W, W, W, M, D, _, _],
+    [_, D, M, W, W, C, C, W, W, C, C, W, M, D, _, _],
+    [_, D, M, W, W, C, C, W, W, C, C, W, M, D, _, _],
+    [_, D, M, W, W, W, W, W, W, W, W, W, M, D, _, _],
+    [_, D, M, M, M, M, M, M, M, M, M, M, M, D, _, _],
+    [_, _, D, D, D, D, D, D, D, D, D, D, D, _, _, _],
+    [_, _, D, _, _, _, _, _, _, _, _, _, D, _, _, _],
+    [_, _, D, _, _, _, _, _, _, _, _, _, D, _, _, _],
+    [_, _, D, _, _, _, _, _, _, _, _, _, D, _, _, _],
+    [_, _, D, _, _, _, _, _, _, _, _, _, D, _, _, _],
+    [_, _, D, _, _, _, _, _, _, _, _, _, D, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
 // ── Speech Bubble Sprites ───────────────────────────────────────
 
-/** Permission bubble: white square with "..." in amber, and a tail pointer (11x13) */
+/** Permission bubble: bright orange "!" badge demanding attention (11x13) */
 export const BUBBLE_PERMISSION_SPRITE: SpriteData = (() => {
-  const B = '#555566' // border
-  const F = '#EEEEFF' // fill
-  const A = '#CCA700' // amber dots
+  const B = '#5A1F00' // dark outline
+  const O = '#FF7A1A' // bright orange fill
+  const H = '#FFB060' // highlight
+  const W = '#FFFFFF' // bang glyph
   return [
-    [B, B, B, B, B, B, B, B, B, B, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, A, F, A, F, A, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, F, F, F, F, F, F, F, F, F, B],
-    [B, B, B, B, B, B, B, B, B, B, B],
+    [_, B, B, B, B, B, B, B, B, B, _],
+    [B, O, H, O, O, O, O, O, H, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [B, O, O, O, O, O, O, O, O, O, B],
+    [B, O, O, O, W, W, O, O, O, O, B],
+    [_, B, B, B, B, B, B, B, B, B, _],
     [_, _, _, _, B, B, B, _, _, _, _],
     [_, _, _, _, _, B, _, _, _, _, _],
     [_, _, _, _, _, _, _, _, _, _, _],

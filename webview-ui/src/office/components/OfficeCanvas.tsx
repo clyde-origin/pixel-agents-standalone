@@ -218,6 +218,9 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           officeState.getLayout().tileColors,
           officeState.getLayout().cols,
           officeState.getLayout().rows,
+          officeState.effects,
+          officeState.getActivePCTiles(),
+          performance.now(),
         )
         offsetRef.current = { x: offsetX, y: offsetY }
 

@@ -77,8 +77,106 @@ const persistedSeats = loadPersistedSeats();
 
 // Express app
 const app = express();
+app.use(express.json({ limit: "256kb" }));
 // Serve production build
 app.use(express.static(join(__dirname, "public")));
+
+// ── Permission request bus ──────────────────────────────────
+// PreToolUse hook posts to /permission/request and waits for the user's verdict
+// from the modal (POSTed back to /permission/respond). Read-only tools auto-allow.
+// If no UI clients are connected we also auto-allow so unattended sessions don't stall.
+const READONLY_TOOLS = new Set([
+  "Read", "Grep", "Glob", "WebFetch", "WebSearch",
+  "Task", "AskUserQuestion",
+  "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskOutput", "TaskStop",
+]);
+interface PendingPermission {
+  requestId: string;
+  agentId: number;
+  resolve: (decision: "allow" | "deny") => void;
+  timeoutHandle: ReturnType<typeof setTimeout>;
+}
+const pendingPermissions = new Map<string, PendingPermission>();
+const PERMISSION_TIMEOUT_MS = 5 * 60_000; // 5 minutes — long enough to walk away & decide
+let permissionRequestSeq = 1;
+
+function findAgentBySessionId(sessionId: string): TrackedAgent | null {
+  return agents.get(sessionId) ?? null;
+}
+
+app.post("/permission/request", (req, res) => {
+  const body = req.body as {
+    sessionId?: string;
+    toolName?: string;
+    toolInput?: Record<string, unknown>;
+  };
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  const toolName = typeof body.toolName === "string" ? body.toolName : "";
+  const toolInput = body.toolInput && typeof body.toolInput === "object" ? body.toolInput : {};
+
+  // Read-only / housekeeping tools always allowed.
+  if (READONLY_TOOLS.has(toolName)) {
+    res.json({ decision: "allow", reason: "readonly-tool" });
+    return;
+  }
+  // No connected UI? Allow immediately so unattended sessions don't hang.
+  if (clients.size === 0) {
+    res.json({ decision: "allow", reason: "no-ui" });
+    return;
+  }
+  const agent = sessionId ? findAgentBySessionId(sessionId) : null;
+  if (!agent) {
+    res.json({ decision: "allow", reason: "unknown-session" });
+    return;
+  }
+
+  const requestId = `perm-${permissionRequestSeq++}-${Date.now()}`;
+  const timeoutHandle = setTimeout(() => {
+    if (pendingPermissions.has(requestId)) {
+      pendingPermissions.delete(requestId);
+      res.json({ decision: "allow", reason: "timeout" });
+      broadcast({ type: "agentPermissionResolved", requestId, decision: "allow" });
+    }
+  }, PERMISSION_TIMEOUT_MS);
+
+  pendingPermissions.set(requestId, {
+    requestId,
+    agentId: agent.id,
+    timeoutHandle,
+    resolve: (decision) => {
+      clearTimeout(timeoutHandle);
+      pendingPermissions.delete(requestId);
+      res.json({ decision });
+    },
+  });
+
+  broadcast({
+    type: "agentPermissionRequest",
+    id: agent.id,
+    requestId,
+    toolName,
+    toolInput,
+    lastAssistantText: agent.lastAssistantText || undefined,
+  });
+});
+
+app.post("/permission/respond", (req, res) => {
+  const body = req.body as { requestId?: string; decision?: string };
+  const requestId = typeof body.requestId === "string" ? body.requestId : "";
+  const decisionRaw = typeof body.decision === "string" ? body.decision : "";
+  if (decisionRaw !== "allow" && decisionRaw !== "deny") {
+    res.status(400).json({ ok: false, error: "decision must be allow|deny" });
+    return;
+  }
+  const pending = pendingPermissions.get(requestId);
+  if (!pending) {
+    res.status(404).json({ ok: false, error: "no pending request" });
+    return;
+  }
+  pending.resolve(decisionRaw);
+  broadcast({ type: "agentPermissionResolved", requestId, decision: decisionRaw });
+  res.json({ ok: true });
+});
 
 const server = createServer(app);
 
@@ -226,6 +324,7 @@ watcher.on("fileAdded", (file: WatchedFile) => {
     permissionSent: false,
     hadToolsInTurn: false,
     lastActivityTime: Date.now(),
+    lastAssistantText: "",
   };
 
   agents.set(file.sessionId, agent);
@@ -257,15 +356,18 @@ server.listen(PORT, () => {
   console.log(`Watching ~/.claude/projects/ for active sessions...`);
 });
 
-// Idle shutdown
-setInterval(() => {
-  if (agents.size === 0 && clients.size === 0 && Date.now() - lastActivityTime > IDLE_SHUTDOWN_MS) {
-    console.log("No active sessions or clients for 10 minutes, shutting down...");
-    watcher.stop();
-    server.close();
-    process.exit(0);
-  }
-}, 30_000);
+// Idle shutdown — opt-in only. Standalone mode keeps the server alive so the
+// browser tab can keep monitoring; set IDLE_SHUTDOWN=1 to restore the 10-min auto-exit.
+if (process.env.IDLE_SHUTDOWN === "1") {
+  setInterval(() => {
+    if (agents.size === 0 && clients.size === 0 && Date.now() - lastActivityTime > IDLE_SHUTDOWN_MS) {
+      console.log("No active sessions or clients for 10 minutes, shutting down...");
+      watcher.stop();
+      server.close();
+      process.exit(0);
+    }
+  }, 30_000);
+}
 
 // Graceful shutdown
 process.on("SIGINT", () => {

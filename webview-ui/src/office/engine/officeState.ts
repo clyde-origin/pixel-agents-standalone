@@ -1,4 +1,5 @@
 import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction } from '../types.js'
+import { isReadingTool } from './characters.js'
 import {
   PALETTE_COUNT,
   HUE_SHIFT_MIN_DEG,
@@ -12,8 +13,15 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
+  INTENSITY_BOOST_PER_TOOL,
+  INTENSITY_MAX,
+  EFFECT_LIFETIME_SEC,
+  EFFECT_HORIZ_DRIFT_PX,
+  THINKING_THRESHOLD_SEC,
+  PACING_ROW_MIN,
+  PACING_ROW_MAX,
 } from '../../constants.js'
-import type { Character, Seat, FurnitureInstance, TileType as TileTypeVal, OfficeLayout, PlacedFurniture } from '../types.js'
+import type { Character, Seat, FurnitureInstance, TileType as TileTypeVal, OfficeLayout, PlacedFurniture, ToolEffect } from '../types.js'
 import { createCharacter, updateCharacter } from './characters.js'
 import { matrixEffectSeeds } from './matrixEffect.js'
 import { isWalkable, getWalkableTiles, findPath } from '../layout/tileMap.js'
@@ -43,6 +51,11 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map()
   private nextSubagentId = -1
+  /** Floating tool-reaction effects above characters' heads */
+  effects: ToolEffect[] = []
+  private nextEffectId = 1
+  /** Tile keys ("col,row") currently occupied by a character on a field trip (beanbag/bookshelf). */
+  private occupiedTripTiles = new Set<string>()
 
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout()
@@ -251,6 +264,18 @@ export class OfficeState {
     const ch = this.characters.get(id)
     if (!ch) return
     if (ch.matrixEffect === 'despawn') return // already despawning
+    // Release any field-trip tile they were holding
+    if (ch.tripTile) {
+      this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+      ch.tripTile = null
+      ch.tripMode = null
+    }
+    // If they had been on a trip, free their original seat too — not the trip-cleared `seatId`
+    if (ch.originalSeatId) {
+      const seat = this.seats.get(ch.originalSeatId)
+      if (seat) seat.assigned = false
+      ch.originalSeatId = null
+    }
     // Free seat and clear selection immediately
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId)
@@ -509,6 +534,32 @@ export class OfficeState {
     }
   }
 
+  /** Tiles holding a PC whose seated agent is actively working — used by the
+   *  renderer to paint an animated screen-glow over the monitor. */
+  getActivePCTiles(): Array<{ col: number; row: number; agentId: number }> {
+    const result: Array<{ col: number; row: number; agentId: number }> = []
+    for (const ch of this.characters.values()) {
+      if (!ch.isActive || !ch.seatId) continue
+      const seat = this.seats.get(ch.seatId)
+      if (!seat) continue
+      const dCol = seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0
+      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0
+      // Walk the facing direction looking for a PC tile in front of the agent.
+      for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
+        const tc = seat.seatCol + dCol * d
+        const tr = seat.seatRow + dRow * d
+        const pc = this.layout.furniture.find(
+          (f) => f.type === 'pc' && f.col === tc && f.row === tr,
+        )
+        if (pc) {
+          result.push({ col: tc, row: tr, agentId: ch.id })
+          break
+        }
+      }
+    }
+    return result
+  }
+
   /** Rebuild furniture instances with auto-state applied (active agents turn electronics ON) */
   private rebuildFurnitureInstances(): void {
     // Collect tiles where active agents face desks
@@ -573,7 +624,30 @@ export class OfficeState {
     const ch = this.characters.get(id)
     if (ch) {
       ch.currentTool = tool
+      if (tool) {
+        // Tool start: pump intensity, spawn a reaction effect, and shorten time-to-stretch
+        // so a long tool burst is more likely to interrupt with a stand-up.
+        ch.intensity = Math.min(INTENSITY_MAX, ch.intensity + INTENSITY_BOOST_PER_TOOL)
+        this.spawnToolEffect(id, tool)
+      }
     }
+  }
+
+  /** Pop a small floating symbol above the agent's head for a tool start */
+  spawnToolEffect(agentId: number, toolName: string): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+    const kind = toolKindForEffect(toolName)
+    if (!kind) return
+    this.effects.push({
+      id: this.nextEffectId++,
+      x: ch.x,
+      y: ch.y,
+      kind,
+      age: 0,
+      lifetime: EFFECT_LIFETIME_SEC,
+      drift: (Math.random() * 2 - 1) * EFFECT_HORIZ_DRIFT_PX,
+    })
   }
 
   showPermissionBubble(id: number): void {
@@ -613,7 +687,163 @@ export class OfficeState {
     }
   }
 
+  /** Called by the message hook on tool start (false) / last tool done (true). */
+  setAgentBetweenTools(id: number, between: boolean): void {
+    const ch = this.characters.get(id)
+    if (!ch) return
+    if (between) {
+      // Stamp the moment they entered the no-tool gap (used to detect long thinks).
+      ch.lastNoToolTime = performance.now() / 1000
+    } else {
+      ch.lastNoToolTime = null
+    }
+  }
+
+  /** Find the closest free trip tile for the given trip type (Manhattan distance). */
+  private pickFreeTripTile(
+    type: 'beanbag' | 'bookshelf',
+    fromCol: number,
+    fromRow: number,
+  ): { col: number; row: number } | null {
+    let best: { col: number; row: number } | null = null
+    let bestDist = Infinity
+    for (const f of this.layout.furniture) {
+      let candidate: { col: number; row: number } | null = null
+      if (type === 'beanbag' && f.type === 'beanbag') {
+        // Beanbag is 1×1, character sits on it directly.
+        candidate = { col: f.col, row: f.row }
+      } else if (type === 'bookshelf' && f.type === 'bookshelf') {
+        // Bookshelf is 1×2 and blocked — stand on the floor tile directly in front of it.
+        // Bookshelves on the left wall (col 1): stand at col 2.
+        // Bookshelves on the right wall (col cols-2): stand at col cols-3.
+        const cols = this.layout.cols
+        if (f.col <= 2) candidate = { col: f.col + 1, row: f.row + 1 }
+        else if (f.col >= cols - 3) candidate = { col: f.col - 1, row: f.row + 1 }
+        else candidate = { col: f.col, row: f.row + 2 }
+      }
+      if (!candidate) continue
+      const key = `${candidate.col},${candidate.row}`
+      if (this.occupiedTripTiles.has(key)) continue
+      // Skip if not walkable (some bookshelf placements may face walls)
+      const tile = this.tileMap[candidate.row]?.[candidate.col]
+      if (tile === undefined) continue
+      if (this.blockedTiles.has(key)) continue
+      const dist = Math.abs(candidate.col - fromCol) + Math.abs(candidate.row - fromRow)
+      if (dist < bestDist) {
+        best = candidate
+        bestDist = dist
+      }
+    }
+    return best
+  }
+
+  /** Begin walking the agent toward a trip target. Returns true if a path was found. */
+  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing'): boolean {
+    let target: { col: number; row: number } | null
+    if (type === 'pacing') {
+      target = this.pickPacingTile(ch.tileCol, ch.tileRow)
+    } else {
+      target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
+    }
+    if (!target) return false
+    const path = findPath(
+      ch.tileCol,
+      ch.tileRow,
+      target.col,
+      target.row,
+      this.tileMap,
+      this.blockedTiles,
+    )
+    if (path.length === 0) return false
+    if (ch.originalSeatId === null) {
+      ch.originalSeatId = ch.seatId
+    }
+    ch.seatId = null  // tells WALK→arrive logic to "sit in place"
+    ch.tripMode = type
+    ch.tripTile = target
+    // Pacing tiles aren't reserved — multiple pacers share the library aisle freely.
+    if (type !== 'pacing') {
+      this.occupiedTripTiles.add(`${target.col},${target.row}`)
+    }
+    ch.path = path
+    ch.moveProgress = 0
+    ch.state = CharacterState.WALK
+    ch.frame = 0
+    ch.frameTimer = 0
+    return true
+  }
+
+  /** Pick a random walkable tile in the library pacing zone, biased away from current position
+   *  so the agent visibly traverses the library rather than flicking in place. */
+  private pickPacingTile(fromCol: number, fromRow: number): { col: number; row: number } | null {
+    const candidates: Array<{ col: number; row: number; dist: number }> = []
+    const cols = this.layout.cols
+    for (let row = PACING_ROW_MIN; row <= PACING_ROW_MAX; row++) {
+      for (let col = 1; col < cols - 1; col++) {
+        if (this.blockedTiles.has(`${col},${row}`)) continue
+        const tile = this.tileMap[row]?.[col]
+        if (tile === undefined) continue
+        const dist = Math.abs(col - fromCol) + Math.abs(row - fromRow)
+        // Need to be at least a few tiles away — avoid degenerate "pace" of 1 tile
+        if (dist < 5) continue
+        candidates.push({ col, row, dist })
+      }
+    }
+    if (candidates.length === 0) return null
+    // Bias toward farther tiles for sweeping motion, but keep some randomness.
+    candidates.sort((a, b) => b.dist - a.dist)
+    const top = candidates.slice(0, Math.max(4, Math.floor(candidates.length / 3)))
+    return top[Math.floor(Math.random() * top.length)]
+  }
+
+  /** End the current trip and walk the agent back toward their home seat. */
+  private endTrip(ch: Character): void {
+    if (ch.tripTile) {
+      this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+      ch.tripTile = null
+    }
+    ch.tripMode = null
+    if (ch.originalSeatId) {
+      ch.seatId = ch.originalSeatId
+      ch.originalSeatId = null
+      const seat = this.seats.get(ch.seatId)
+      if (seat && (ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow)) {
+        const path = findPath(
+          ch.tileCol,
+          ch.tileRow,
+          seat.seatCol,
+          seat.seatRow,
+          this.tileMap,
+          this.blockedTiles,
+        )
+        if (path.length > 0) {
+          ch.path = path
+          ch.moveProgress = 0
+          ch.state = CharacterState.WALK
+          ch.frame = 0
+          ch.frameTimer = 0
+        }
+      }
+    }
+  }
+
+  /** Determine what trip (if any) the agent should currently be on. */
+  private desiredTripFor(ch: Character, now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
+    // Idle (turn ended) → relax on a beanbag
+    if (!ch.isActive) return 'beanbag'
+    // Active + reading tool → stand at a bookshelf
+    if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) {
+      return 'bookshelf'
+    }
+    // Active but no tool for a while → walk to the library and pace
+    if (ch.lastNoToolTime !== null && now - ch.lastNoToolTime > THINKING_THRESHOLD_SEC) {
+      return 'pacing'
+    }
+    return null
+  }
+
   update(dt: number): void {
+    const now = performance.now() / 1000
     const toDelete: number[] = []
     for (const ch of this.characters.values()) {
       // Handle matrix effect animation
@@ -631,6 +861,42 @@ export class OfficeState {
           }
         }
         continue // skip normal FSM while effect is active
+      }
+
+      // Field-trip transitions: idle → beanbag, reading → bookshelf, thinking → pacing, else → home
+      const desired = this.desiredTripFor(ch, now)
+      if (desired !== ch.tripMode) {
+        if (desired === null) {
+          this.endTrip(ch)
+        } else {
+          if (ch.tripTile) {
+            this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+            ch.tripTile = null
+            ch.tripMode = null
+          }
+          this.startTrip(ch, desired)
+        }
+      }
+
+      // Pacing: when the path completes, immediately pick a new far-away library tile so
+      // the agent visibly walks back and forth instead of standing in place.
+      if (
+        ch.tripMode === 'pacing' &&
+        ch.state !== CharacterState.WALK &&
+        ch.path.length === 0
+      ) {
+        const next = this.pickPacingTile(ch.tileCol, ch.tileRow)
+        if (next) {
+          const path = findPath(ch.tileCol, ch.tileRow, next.col, next.row, this.tileMap, this.blockedTiles)
+          if (path.length > 0) {
+            ch.path = path
+            ch.moveProgress = 0
+            ch.state = CharacterState.WALK
+            ch.frame = 0
+            ch.frameTimer = 0
+            ch.tripTile = next
+          }
+        }
       }
 
       // Temporarily unblock own seat so character can pathfind to it
@@ -651,6 +917,16 @@ export class OfficeState {
     for (const id of toDelete) {
       this.characters.delete(id)
     }
+
+    // Tick floating effects; drop any that have aged out
+    if (this.effects.length > 0) {
+      const live: ToolEffect[] = []
+      for (const fx of this.effects) {
+        fx.age += dt
+        if (fx.age < fx.lifetime) live.push(fx)
+      }
+      this.effects = live
+    }
   }
 
   getCharacters(): Character[] {
@@ -665,7 +941,7 @@ export class OfficeState {
       if (ch.matrixEffect === 'despawn') continue
       // Character sprite is 16x24, anchored bottom-center
       // Apply sitting offset to match visual position
-      const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0
+      const sittingOffset = (ch.state === CharacterState.TYPE && !ch.stretching) ? CHARACTER_SITTING_OFFSET_PX : 0
       const anchorY = ch.y + sittingOffset
       const left = ch.x - CHARACTER_HIT_HALF_WIDTH
       const right = ch.x + CHARACTER_HIT_HALF_WIDTH
@@ -676,5 +952,30 @@ export class OfficeState {
       }
     }
     return null
+  }
+}
+
+/** Map a tool name to a small floating symbol kind, or null to skip the effect. */
+function toolKindForEffect(toolName: string): ToolEffect['kind'] | null {
+  switch (toolName) {
+    case 'Edit':
+    case 'Write':
+    case 'NotebookEdit':
+      return 'edit'
+    case 'Bash':
+      return 'bash'
+    case 'Read':
+      return 'read'
+    case 'Grep':
+    case 'Glob':
+    case 'WebFetch':
+    case 'WebSearch':
+      return 'search'
+    case 'Task':
+      return 'task'
+    case 'Agent':
+      return 'task'
+    default:
+      return 'spark'
   }
 }

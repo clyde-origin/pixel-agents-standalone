@@ -1,17 +1,25 @@
-import { CharacterState, Direction, TILE_SIZE } from '../types.js'
+import { CharacterState, Direction, TILE_SIZE, TileType } from '../types.js'
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js'
+
+/** Probability that an idle wander step will target a lounge tile (FLOOR_2) when any exist. */
+const LOUNGE_BIAS_PROBABILITY = 0.75
 import type { CharacterSprites } from '../sprites/spriteData.js'
 import { findPath } from '../layout/tileMap.js'
 import {
   WALK_SPEED_PX_PER_SEC,
   WALK_FRAME_DURATION_SEC,
   TYPE_FRAME_DURATION_SEC,
+  TYPE_FRAME_DURATION_MIN_SEC,
   WANDER_PAUSE_MIN_SEC,
   WANDER_PAUSE_MAX_SEC,
   WANDER_MOVES_BEFORE_REST_MIN,
   WANDER_MOVES_BEFORE_REST_MAX,
   SEAT_REST_MIN_SEC,
   SEAT_REST_MAX_SEC,
+  INTENSITY_DECAY_PER_SEC,
+  STRETCH_INTERVAL_MIN_SEC,
+  STRETCH_INTERVAL_MAX_SEC,
+  STRETCH_DURATION_SEC,
 } from '../../constants.js'
 
 /** Tools that show reading animation instead of typing */
@@ -78,6 +86,14 @@ export function createCharacter(
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
+    intensity: 0,
+    stretchTimer: randomRange(STRETCH_INTERVAL_MIN_SEC, STRETCH_INTERVAL_MAX_SEC),
+    stretching: false,
+    stretchRemaining: 0,
+    tripMode: null,
+    tripTile: null,
+    originalSeatId: null,
+    lastNoToolTime: null,
   }
 }
 
@@ -91,14 +107,48 @@ export function updateCharacter(
 ): void {
   ch.frameTimer += dt
 
+  // Decay intensity globally — applies in all states so it leaks back to 0.
+  if (ch.intensity > 0) {
+    ch.intensity = Math.max(0, ch.intensity - INTENSITY_DECAY_PER_SEC * dt)
+  }
+
   switch (ch.state) {
     case CharacterState.TYPE: {
-      if (ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
-        ch.frameTimer -= TYPE_FRAME_DURATION_SEC
+      // Tick stretch gesture: brief stand-up while active to sell "still working"
+      if (ch.isActive) {
+        if (ch.stretching) {
+          ch.stretchRemaining -= dt
+          if (ch.stretchRemaining <= 0) {
+            ch.stretching = false
+            ch.stretchTimer = randomRange(STRETCH_INTERVAL_MIN_SEC, STRETCH_INTERVAL_MAX_SEC)
+            ch.frame = 0
+            ch.frameTimer = 0
+          }
+          break
+        }
+        ch.stretchTimer -= dt
+        if (ch.stretchTimer <= 0) {
+          ch.stretching = true
+          ch.stretchRemaining = STRETCH_DURATION_SEC
+          ch.frame = 0
+          ch.frameTimer = 0
+          break
+        }
+      }
+      // Frame swap, sped up by intensity
+      const frameDur = TYPE_FRAME_DURATION_SEC -
+        ch.intensity * (TYPE_FRAME_DURATION_SEC - TYPE_FRAME_DURATION_MIN_SEC)
+      if (ch.frameTimer >= frameDur) {
+        ch.frameTimer -= frameDur
         ch.frame = (ch.frame + 1) % 2
       }
-      // If no longer active, stand up and start wandering (after seatTimer expires)
+      // If no longer active, stand up and start wandering (after seatTimer expires).
+      // Exception: if we're parked on a beanbag (idle trip), stay seated — the trip
+      // system in OfficeState is in charge of when to get up.
       if (!ch.isActive) {
+        if (ch.tripMode === 'beanbag') {
+          break
+        }
         if (ch.seatTimer > 0) {
           ch.seatTimer -= dt
           break
@@ -165,7 +215,16 @@ export function updateCharacter(
           }
         }
         if (walkableTiles.length > 0) {
-          const target = walkableTiles[Math.floor(Math.random() * walkableTiles.length)]
+          // Prefer lounge tiles (FLOOR_2) so idle agents congregate in the chillout room.
+          // Fall back to any walkable tile if no lounge tiles exist or the dice rolls otherwise.
+          let candidates = walkableTiles
+          if (Math.random() < LOUNGE_BIAS_PROBABILITY) {
+            const lounge = walkableTiles.filter(
+              (t) => tileMap[t.row]?.[t.col] === TileType.FLOOR_2,
+            )
+            if (lounge.length > 0) candidates = lounge
+          }
+          const target = candidates[Math.floor(Math.random() * candidates.length)]
           const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, tileMap, blockedTiles)
           if (path.length > 0) {
             ch.path = path
@@ -281,6 +340,10 @@ export function updateCharacter(
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
+      // Stretch: brief stand-up gesture while still in TYPE state
+      if (ch.stretching) {
+        return sprites.walk[ch.dir][1]
+      }
       if (isReadingTool(ch.currentTool)) {
         return sprites.reading[ch.dir][ch.frame % 2]
       }

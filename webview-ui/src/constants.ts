@@ -111,3 +111,33 @@ export const CHARACTER_HIT_HALF_WIDTH = 8
 export const CHARACTER_HIT_HEIGHT = 24
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32
 export const PULSE_ANIMATION_DURATION_SEC = 1.5
+
+// ── Activity intensity ──────────────────────────────────────
+// Tool starts pump intensity 0→1; decays over time. High intensity = faster typing.
+export const INTENSITY_BOOST_PER_TOOL = 0.4
+export const INTENSITY_MAX = 1.0
+export const INTENSITY_DECAY_PER_SEC = 0.18
+export const TYPE_FRAME_DURATION_MIN_SEC = 0.07
+
+// ── Tool reaction effects (floating symbols above head) ─────
+export const EFFECT_LIFETIME_SEC = 0.9
+export const EFFECT_RISE_PX_PER_SEC = 22
+export const EFFECT_HORIZ_DRIFT_PX = 4
+
+// ── Stretch gesture (brief stand-up while active) ───────────
+export const STRETCH_INTERVAL_MIN_SEC = 18
+export const STRETCH_INTERVAL_MAX_SEC = 38
+export const STRETCH_DURATION_SEC = 0.9
+
+// ── Walk-to-shelf for reading tools ─────────────────────────
+export const SHELF_VISIT_MIN_TOOL_BURST = 2
+export const SHELF_VISIT_PROBABILITY = 0.55
+export const SHELF_DWELL_MIN_SEC = 1.5
+export const SHELF_DWELL_MAX_SEC = 4.5
+
+// ── Field trip thresholds ───────────────────────────────────
+/** Seconds without an active tool before an active agent walks to the library to pace. */
+export const THINKING_THRESHOLD_SEC = 5
+/** Library pacing zone — open floor at the top of the lounge. */
+export const PACING_ROW_MIN = 14
+export const PACING_ROW_MAX = 16

@@ -1,5 +1,5 @@
 import { TileType, TILE_SIZE, CharacterState } from '../types.js'
-import type { TileType as TileTypeVal, FurnitureInstance, Character, SpriteData, Seat, FloorColor } from '../types.js'
+import type { TileType as TileTypeVal, FurnitureInstance, Character, SpriteData, Seat, FloorColor, ToolEffect } from '../types.js'
 import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js'
 import { getCharacterSprites, BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js'
 import { getCharacterSprite } from './characters.js'
@@ -38,6 +38,7 @@ import {
   SELECTION_HIGHLIGHT_COLOR,
   DELETE_BUTTON_BG,
   ROTATE_BUTTON_BG,
+  EFFECT_RISE_PX_PER_SEC,
 } from '../../constants.js'
 
 // ── Render functions ────────────────────────────────────────────
@@ -124,8 +125,9 @@ export function renderScene(
     const sprites = getCharacterSprites(ch.palette, ch.hueShift)
     const spriteData = getCharacterSprite(ch, sprites)
     const cached = getCachedSprite(spriteData, zoom)
-    // Sitting offset: shift character down when seated so they visually sit in the chair
-    const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0
+    // Sitting offset: shift character down when seated so they visually sit in the chair.
+    // Suppress while stretching so the stand-up gesture doesn't draw mid-air.
+    const sittingOffset = (ch.state === CharacterState.TYPE && !ch.stretching) ? CHARACTER_SITTING_OFFSET_PX : 0
     // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2)
     const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height)
@@ -482,6 +484,95 @@ export function renderBubbles(
   }
 }
 
+// ── Active PC screen glow ───────────────────────────────────────
+
+/** Paint an animated colored rectangle over the screen area of each active PC.
+ *  The glow's hue cycles slowly per-agent so different desks shimmer at different phases. */
+export function renderActivePCScreens(
+  ctx: CanvasRenderingContext2D,
+  tiles: Array<{ col: number; row: number; agentId: number }>,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  timeMs: number,
+): void {
+  if (tiles.length === 0) return
+  // The PC sprite's screen area is roughly cols 5-10, rows 2-7 within its 16x16 tile.
+  const SCREEN_X = 5
+  const SCREEN_Y = 2
+  const SCREEN_W = 6
+  const SCREEN_H = 6
+  ctx.save()
+  for (const t of tiles) {
+    // Per-agent hue offset so siblings cycle differently
+    const phase = (t.agentId * 73) % 360
+    const hue = (phase + timeMs * 0.06) % 360
+    // Mild pulse on the alpha so it reads as "live"
+    const pulse = 0.55 + 0.25 * Math.sin(timeMs * 0.004 + t.agentId)
+    const color = `hsl(${hue}, 80%, 62%)`
+    const px = offsetX + (t.col * TILE_SIZE + SCREEN_X) * zoom
+    const py = offsetY + (t.row * TILE_SIZE + SCREEN_Y) * zoom
+    const w = SCREEN_W * zoom
+    const h = SCREEN_H * zoom
+    ctx.globalAlpha = pulse
+    ctx.fillStyle = color
+    ctx.fillRect(px, py, w, h)
+    // Subtle highlight on the top edge
+    ctx.globalAlpha = pulse * 0.6
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(px, py, w, Math.max(1, zoom))
+  }
+  ctx.restore()
+}
+
+// ── Tool reaction effects ───────────────────────────────────────
+
+const EFFECT_GLYPHS: Record<ToolEffect['kind'], { glyph: string; color: string }> = {
+  edit: { glyph: '✎', color: '#ffd66b' },        // ✎ pencil
+  bash: { glyph: '»', color: '#7be3a8' },        // » terminal
+  read: { glyph: '․', color: '#9ad8ff' },        // small dot column
+  search: { glyph: '⌕', color: '#9ad8ff' },      // ⌕ magnifier-ish
+  task: { glyph: '❖', color: '#d8a3ff' },        // ❖ subtask
+  permission: { glyph: '⚠', color: '#ff9255' },  // ⚠
+  spark: { glyph: '∗', color: '#ffffff' },       // ∗
+}
+
+export function renderEffects(
+  ctx: CanvasRenderingContext2D,
+  effects: ToolEffect[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  if (effects.length === 0) return
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  for (const fx of effects) {
+    const t = fx.age / fx.lifetime
+    if (t >= 1) continue
+    // Float up + slight horizontal drift; ease-out alpha so fade is most visible at end.
+    const rise = EFFECT_RISE_PX_PER_SEC * fx.age
+    const driftX = fx.drift * t
+    // Anchor above the head (head is roughly 24px above bottom-anchor y)
+    const wx = fx.x + driftX
+    const wy = fx.y - 22 - rise
+    const px = offsetX + wx * zoom
+    const py = offsetY + wy * zoom
+    const meta = EFFECT_GLYPHS[fx.kind]
+    const alpha = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85
+    const fontPx = Math.max(8, Math.round(8 * zoom * 0.9))
+    ctx.font = `bold ${fontPx}px ui-monospace, "SF Mono", Menlo, monospace`
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha))
+    // Soft shadow for legibility on busy floors
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillText(meta.glyph, px + 1, py + 1)
+    ctx.fillStyle = meta.color
+    ctx.fillText(meta.glyph, px, py)
+  }
+  ctx.restore()
+}
+
 export interface ButtonBounds {
   /** Center X in device pixels */
   cx: number
@@ -541,6 +632,9 @@ export function renderFrame(
   tileColors?: Array<FloorColor | null>,
   layoutCols?: number,
   layoutRows?: number,
+  effects?: ToolEffect[],
+  activePCTiles?: Array<{ col: number; row: number; agentId: number }>,
+  timeMs?: number,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight)
@@ -576,8 +670,18 @@ export function renderFrame(
   const hoveredId = selection?.hoveredAgentId ?? null
   renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId)
 
+  // Screen-glow on active PCs (after furniture, under bubbles/effects)
+  if (activePCTiles && activePCTiles.length > 0) {
+    renderActivePCScreens(ctx, activePCTiles, offsetX, offsetY, zoom, timeMs ?? performance.now())
+  }
+
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)
+
+  // Tool reaction effects (above everything)
+  if (effects && effects.length > 0) {
+    renderEffects(ctx, effects, offsetX, offsetY, zoom)
+  }
 
   // Editor overlays
   if (editor) {
