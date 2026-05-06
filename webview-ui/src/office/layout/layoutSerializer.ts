@@ -55,13 +55,23 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
       }
     }
 
-    // Surface items render in front of the desk they sit on
+    // Surface items render in front of the desk they sit on, and lift up onto the desk
+    // wood so the monitor's stand/base doesn't poke into the (mostly transparent) legs zone.
+    let renderY = y
     if (entry.canPlaceOnSurfaces) {
+      let onDesk = false
       for (let dr = 0; dr < entry.footprintH; dr++) {
         for (let dc = 0; dc < entry.footprintW; dc++) {
           const deskZ = deskZByTile.get(`${item.col + dc},${item.row + dr}`)
-          if (deskZ !== undefined && deskZ + 0.5 > zY) zY = deskZ + 0.5
+          if (deskZ !== undefined) {
+            onDesk = true
+            if (deskZ + 0.5 > zY) zY = deskZ + 0.5
+          }
         }
+      }
+      if (onDesk) {
+        // Lift surface items 6 px so the monitor's base sits on the desk wood, not below it.
+        renderY -= 6
       }
     }
 
@@ -72,7 +82,7 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
       sprite = getColorizedSprite(`furn-${item.type}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`, entry.sprite, item.color)
     }
 
-    instances.push({ sprite, x, y, zY })
+    instances.push({ sprite, x, y: renderY, zY })
   }
   return instances
 }
