@@ -9,28 +9,26 @@ interface DeskLabelsProps {
   panRef: React.RefObject<{ x: number; y: number }>
 }
 
-/** A workgroup pod — bounding box of tiles and the task-type label that sits on the center desk. */
+/** A task-type label that sits on a specific desk's surface. */
 interface ClusterDef {
-  /** tile col range (inclusive) */
-  colMin: number
-  colMax: number
-  /** tile row of the desks (used for project-occupancy detection) */
-  deskRow: number
-  /** Tile row where the label is anchored on the desk surface. */
+  /** Left col of the 2-wide desk this label sits on. Label centers at (deskCol + 1, labelRow). */
+  deskCol: number
+  /** Tile row where the label is anchored on the desk surface (the bottom desk row of the 2-tall desk). */
   labelRow: number
   title: string
   tone: 'cool' | 'warm' | 'pink' | 'amber' | 'teal' | 'violet' | 'green'
 }
 
-// Six task pods. Top clusters: desks rows 3-4 — label sits on the desk surface.
-// Bottom clusters: desks rows 11-12 — label on the desk surface.
+// One label per desk pod. Top row labels sit on the home desks at row 4 (bottom of the 2-row
+// desk); bottom row labels on the desks at row 12. Layout has 4 desks per row at cols 2, 7, 12, 17 —
+// six categories cover the first three desks of each row; the 4th desk in each row is unlabeled.
 const CLUSTERS: ClusterDef[] = [
-  { colMin: 2,  colMax: 7,  deskRow: 3,  labelRow: 4,  title: 'BUILD',    tone: 'cool' },
-  { colMin: 10, colMax: 15, deskRow: 3,  labelRow: 4,  title: 'REFACTOR', tone: 'amber' },
-  { colMin: 18, colMax: 23, deskRow: 3,  labelRow: 4,  title: 'SHIP',     tone: 'green' },
-  { colMin: 2,  colMax: 7,  deskRow: 11, labelRow: 12, title: 'TEST',     tone: 'teal' },
-  { colMin: 10, colMax: 15, deskRow: 11, labelRow: 12, title: 'REVIEW',   tone: 'pink' },
-  { colMin: 18, colMax: 23, deskRow: 11, labelRow: 12, title: 'EXPLORE',  tone: 'violet' },
+  { deskCol: 2,  labelRow: 4,  title: 'BUILD',    tone: 'cool' },
+  { deskCol: 7,  labelRow: 4,  title: 'REFACTOR', tone: 'amber' },
+  { deskCol: 12, labelRow: 4,  title: 'SHIP',     tone: 'green' },
+  { deskCol: 2,  labelRow: 12, title: 'TEST',     tone: 'teal' },
+  { deskCol: 7,  labelRow: 12, title: 'REVIEW',   tone: 'pink' },
+  { deskCol: 12, labelRow: 12, title: 'EXPLORE',  tone: 'violet' },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
@@ -79,9 +77,8 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
   return (
     <>
       {CLUSTERS.map((c, i) => {
-        // Center the label on the middle desk's center column.
-        const centerCol = (c.colMin + c.colMax) / 2 + 0.5
-        const wx = centerCol * TILE_SIZE
+        // Center the label on the desk's center: deskCol + 1 (since the desk is 2 tiles wide).
+        const wx = (c.deskCol + 1) * TILE_SIZE
         // Anchor at the TOP of the bottom desk row so the label sits on the desk surface,
         // slightly above the monitor screen so it doesn't cover anything important.
         const wy = c.labelRow * TILE_SIZE
