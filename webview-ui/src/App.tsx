@@ -16,6 +16,7 @@ import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
 import { DeskLabels } from './components/DeskLabels.js'
 import { PermissionModal } from './components/PermissionModal.js'
+import { PendingQueue } from './components/PendingQueue.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -123,7 +124,7 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
   const [permissionAgentId, setPermissionAgentId] = useState<number | null>(null)
@@ -314,6 +315,11 @@ function App() {
         panRef={editor.panRef}
         onCloseAgent={handleCloseAgent}
         onRespondToAgent={handleRespondToAgent}
+      />
+
+      <PendingQueue
+        pending={pending}
+        onSelect={(id) => setPermissionAgentId(id)}
       />
 
       <PermissionModal

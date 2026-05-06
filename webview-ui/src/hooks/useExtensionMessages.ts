@@ -72,6 +72,8 @@ export interface ExtensionMessageState {
   permissionContexts: Record<number, PermissionContext>
   /** Preset response buttons keyed by tool name (with `default` fallback). */
   responses: Record<string, ResponseTemplate[]>
+  /** Active pending permission requests across all agents (top-right queue badge). */
+  pending: Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>
 }
 
 const DESK_ASSIGNMENT_STORAGE_KEY = 'pixel-agents:home-desk-assignments'
@@ -166,6 +168,7 @@ export function useExtensionMessages(
   const [homeDeskAssignments, setHomeDeskAssignments] = useState<Record<string, string>>(() => loadHomeDeskAssignments())
   const [permissionContexts, setPermissionContexts] = useState<Record<number, PermissionContext>>({})
   const [responses, setResponses] = useState<Record<string, ResponseTemplate[]>>({ default: [] })
+  const [pending, setPending] = useState<Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>>([])
   const homeDeskAssignmentsRef = useRef<Record<string, string>>(homeDeskAssignments)
   const updateHomeDeskAssignments = (next: Record<string, string>) => {
     homeDeskAssignmentsRef.current = next
@@ -422,6 +425,18 @@ export function useExtensionMessages(
           return { ...prev, [id]: [...list, synth] }
         })
         os.showPermissionBubble(id)
+        setPending((prev) => {
+          if (ctx.requestId === undefined) return prev
+          if (prev.some((p) => p.requestId === ctx.requestId)) return prev
+          return [...prev, {
+            agentId: id,
+            folderName: os.characters.get(id)?.folderName,
+            toolName: ctx.toolName,
+            label: typeof (msg as any).label === 'string' ? (msg as any).label : undefined,
+            receivedAt: Date.now(),
+            requestId: ctx.requestId,
+          }]
+        })
       } else if (msg.type === 'agentPermissionResolved') {
         const requestId = msg.requestId as string
         // Clear any modal context that still references this requestId
@@ -451,6 +466,7 @@ export function useExtensionMessages(
           }
           return changed ? next : prev
         })
+        setPending((prev) => prev.filter((p) => p.requestId !== requestId))
       } else if (msg.type === 'subagentToolPermission') {
         const id = msg.id as number
         const parentToolId = msg.parentToolId as string
@@ -572,5 +588,5 @@ export function useExtensionMessages(
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses }
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending }
 }
