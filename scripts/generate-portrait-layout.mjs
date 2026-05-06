@@ -49,17 +49,31 @@ for (const pr of POD_ROWS) for (const pod of HOME_PODS) {
   podIdx++
 }
 
-// 3 stations at row 14
-const STATIONS = [
-  ['build',  4],
-  ['git',    10],
-  ['review', 16],
+// Two rows of single-desk dual-seat station pods.
+// Each = 2 chairs above + 1 desk (2-wide) + 2 PCs on the desk surface.
+const STATION_ROW_A = [
+  { id: 'tests',  col: 3,  title: 'BUILDS & TESTS' },
+  { id: 'git',    col: 9,  title: 'GIT & PRS' },
+  { id: 'review', col: 15, title: 'REVIEW & DOCS' },
 ]
-for (const [sid, c] of STATIONS) {
-  add(`station-${sid}-chair`, 'chair', c, 14)
-  add(`station-${sid}-desk`,  'desk',  c, 15)
-  add(`station-${sid}-pc`,    'pc',    c, 16)
+const STATION_ROW_B = [
+  { id: 'debug',  col: 3,  title: 'DEBUG' },
+  { id: 'docs',   col: 9,  title: 'DOCS' },
+  { id: 'deploy', col: 15, title: 'DEPLOY' },
+]
+
+function addStationRow(stations, chairRow, deskRow, pcRow) {
+  for (const s of stations) {
+    add(`station-${s.id}-chair-l`, 'chair', s.col,     chairRow)
+    add(`station-${s.id}-chair-r`, 'chair', s.col + 1, chairRow)
+    add(`station-${s.id}-desk`,    'desk',  s.col,     deskRow)
+    add(`station-${s.id}-pc-l`,    'pc',    s.col,     pcRow)
+    add(`station-${s.id}-pc-r`,    'pc',    s.col + 1, pcRow)
+  }
 }
+
+addStationRow(STATION_ROW_A, 6,  7,  8)
+addStationRow(STATION_ROW_B, 14, 15, 16)
 
 // Decor — workspace
 add('dec-plant-1', 'plant', 1, 1)

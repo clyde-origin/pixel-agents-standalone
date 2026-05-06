@@ -18,8 +18,7 @@ import {
   EFFECT_LIFETIME_SEC,
   EFFECT_HORIZ_DRIFT_PX,
   THINKING_THRESHOLD_SEC,
-  PACING_ROW_MIN,
-  PACING_ROW_MAX,
+  PACING_ROWS,
 } from '../../constants.js'
 import type { Character, Seat, FurnitureInstance, TileType as TileTypeVal, OfficeLayout, PlacedFurniture, ToolEffect } from '../types.js'
 import { createCharacter, updateCharacter } from './characters.js'
@@ -773,24 +772,22 @@ export class OfficeState {
     return true
   }
 
-  /** Pick a random walkable tile in the library pacing zone, biased away from current position
-   *  so the agent visibly traverses the library rather than flicking in place. */
+  /** Pick a random walkable tile in one of the horizontal aisles, biased away from
+   *  the agent's current position so they visibly traverse the aisle. */
   private pickPacingTile(fromCol: number, fromRow: number): { col: number; row: number } | null {
     const candidates: Array<{ col: number; row: number; dist: number }> = []
     const cols = this.layout.cols
-    for (let row = PACING_ROW_MIN; row <= PACING_ROW_MAX; row++) {
+    for (const row of PACING_ROWS) {
       for (let col = 1; col < cols - 1; col++) {
         if (this.blockedTiles.has(`${col},${row}`)) continue
         const tile = this.tileMap[row]?.[col]
         if (tile === undefined) continue
         const dist = Math.abs(col - fromCol) + Math.abs(row - fromRow)
-        // Need to be at least a few tiles away — avoid degenerate "pace" of 1 tile
         if (dist < 5) continue
         candidates.push({ col, row, dist })
       }
     }
     if (candidates.length === 0) return null
-    // Bias toward farther tiles for sweeping motion, but keep some randomness.
     candidates.sort((a, b) => b.dist - a.dist)
     const top = candidates.slice(0, Math.max(4, Math.floor(candidates.length / 3)))
     return top[Math.floor(Math.random() * top.length)]
@@ -827,12 +824,18 @@ export class OfficeState {
     }
   }
 
-  /** Determine what trip (if any) the agent should currently be on.
-   *  Active agents stay at their desk — only idle (turn-ended) agents go on a trip. */
-  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
-    // Idle (turn ended) → relax on a beanbag
+  /** Determine what trip (if any) the agent should currently be on. */
+  private desiredTripFor(ch: Character, now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
+    // Idle (turn ended) → beanbag
     if (!ch.isActive) return 'beanbag'
-    // Active agents — including reading tools and thinking gaps — stay at their desk.
+    // Active + reading tool currently running → walk to a bookshelf
+    if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) {
+      return 'bookshelf'
+    }
+    // Active + no tool for 30+ seconds → pace in an aisle between desk rows
+    if (ch.lastNoToolTime !== null && now - ch.lastNoToolTime > THINKING_THRESHOLD_SEC) {
+      return 'pacing'
+    }
     return null
   }
 

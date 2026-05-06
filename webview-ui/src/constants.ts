@@ -137,7 +137,6 @@ export const SHELF_DWELL_MAX_SEC = 4.5
 
 // ── Field trip thresholds ───────────────────────────────────
 /** Seconds without an active tool before an active agent walks to the library to pace. */
-export const THINKING_THRESHOLD_SEC = 5
-/** Library pacing zone — open floor at the top of the lounge. */
-export const PACING_ROW_MIN = 14
-export const PACING_ROW_MAX = 16
+export const THINKING_THRESHOLD_SEC = 30
+/** Tile rows that pacing agents walk along — the aisles between desk rows. */
+export const PACING_ROWS: number[] = [5, 9, 13]

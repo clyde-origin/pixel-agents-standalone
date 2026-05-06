@@ -28,6 +28,16 @@ const CLUSTERS: ClusterDef[] = [
   { centerCol: 4,  labelRow: 12, title: 'TEST',     tone: 'teal' },
   { centerCol: 10, labelRow: 12, title: 'REVIEW',   tone: 'pink' },
   { centerCol: 16, labelRow: 12, title: 'EXPLORE',  tone: 'violet' },
+
+  // Station row A (row 6 chairs / 7 desks / 8 PCs) — labelRow = 8 (bottom desk row).
+  { centerCol: 4,  labelRow: 8,  title: 'BUILDS & TESTS', tone: 'warm' },
+  { centerCol: 10, labelRow: 8,  title: 'GIT & PRS',      tone: 'pink' },
+  { centerCol: 16, labelRow: 8,  title: 'REVIEW & DOCS',  tone: 'amber' },
+
+  // Station row B (row 14 / 15 / 16) — labelRow = 16.
+  { centerCol: 4,  labelRow: 16, title: 'DEBUG',          tone: 'violet' },
+  { centerCol: 10, labelRow: 16, title: 'DOCS',           tone: 'cool' },
+  { centerCol: 16, labelRow: 16, title: 'DEPLOY',         tone: 'green' },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
