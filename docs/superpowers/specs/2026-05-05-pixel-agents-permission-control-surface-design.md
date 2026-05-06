@@ -1,8 +1,10 @@
-# Pixel-Agents Permission & Control Surface — Design
+# Pixel-Agents Mobile Oversight & Control Surface — Design
 
 **Status:** Draft. Approved through brainstorming on 2026-05-05.
 **Author:** Clyde + Claude pairing session
-**Scope:** Phase 1 = decision-point chat (gatekeeper + modal + presets). Phase 2 = full chat injection (spike-then-decide). Mobile access included in Phase 1.
+**Scope:**
+- **Phase 1** — Mobile-first oversight: portrait office reshape, PWA shell, per-desk activity cards, per-agent live feed, gatekeeper hook + modal with response presets, per-session watch toggle, Tailscale-friendly remote access.
+- **Phase 2** — Full chat injection (proactively message a running session) — spike on `claude -r <session>` first, then decide.
 
 ## Summary
 
@@ -12,12 +14,15 @@ The previous attempt at this feature broke `git` in unrelated terminals because 
 
 ## Goals
 
-1. **Centralised oversight** of N concurrent Claude Code terminals from one browser tab (desktop or mobile).
-2. **Gatekeeper for risky tools** with a user-editable list — preserves the user's `defaultMode: "auto"` flow for everything else.
-3. **Multi-choice responses** per tool (e.g. for Bash: "Allow", "Add `--dry-run`", "Skip step", "Custom feedback").
-4. **Per-session "watch closely" mode** that surfaces *every* non-readonly tool from a chosen agent.
-5. **Mobile access** so monitoring works from outside the dev machine.
-6. **Non-disruption guarantee:** when the system fails or the user is AFK, tools run normally — never block indefinitely, never break workflows in other terminals.
+1. **Phone-first oversight surface.** Hold the phone in portrait, see every running agent at a glance, tap any sprite to see what they're doing, get pushed when they need input. Installable as a PWA so it lives on the home screen.
+2. **Centralised control of N concurrent Claude Code terminals** from any browser tab (desktop or mobile). One source of truth for "what's happening + what needs me."
+3. **Gatekeeper for risky tools** with a user-editable list — preserves the user's `defaultMode: "auto"` flow for everything else.
+4. **Multi-choice responses** per tool (e.g. for Bash: "Allow", "Add `--dry-run`", "Skip step", "Custom feedback").
+5. **Per-session "watch closely" mode** that surfaces *every* non-readonly tool from a chosen agent.
+6. **Per-desk activity cards** so each running agent's project + plain-English current activity is visible without hovering.
+7. **Per-agent live feed** so tapping a sprite gives a chat-like recent history of that session.
+8. **Remote access** via Tailscale so monitoring works from outside the dev machine.
+9. **Non-disruption guarantee:** when the system fails or the user is AFK, tools run normally — never block indefinitely, never break workflows in other terminals.
 
 ## Non-Goals
 
@@ -227,6 +232,98 @@ Rules:
   - Buttons sized for touch (≥ 44px tap targets).
   - Pinch-to-zoom + one-finger pan on the canvas.
 
+## Portrait Office Reshape (9:16)
+
+Current office is 30 cols × 24 rows (landscape). Phone-first means portrait — target ~9:16 aspect.
+
+**New canvas: 20 cols × 36 rows** (≈ 9:16.2, close enough).
+
+Vertical layout, top to bottom:
+
+| Row range | Zone | Content |
+|-----------|------|---------|
+| 0 | Wall | Top boundary |
+| 1 | — | Padding / decoration row |
+| 2 | Chairs row A1 | 4 chairs at cols 2, 7, 12, 17 (face down toward desks below) |
+| 3–4 | Desks row A1 | 4 desks (2-tile-wide), PCs at row 4 |
+| 5 | Aisle | Walking row + per-desk activity card layer |
+| 6 | Chairs row A2 | 4 chairs |
+| 7–8 | Desks row A2 | 4 desks + PCs |
+| 9 | Aisle | |
+| 10 | Chairs row A3 | 4 chairs |
+| 11–12 | Desks row A3 | 4 desks + PCs |
+| 13 | Aisle | |
+| 14 | Station chairs | 3 stations (cols 4, 10, 16) — Builds, Git, Review |
+| 15–16 | Station desks | + PCs at row 16 |
+| 17 | Transition | Whiteboards, decor — visual divider into lounge |
+| 18–20 | Library aisle | Pacing zone for "thinking" agents |
+| 21–34 | Lounge | Bookshelves on side walls (cols 1, 18), beanbag clusters around coffee tables, lamps, plants |
+| 35 | Wall | Bottom boundary |
+
+12 home desks (3 rows of 4) + 3 stations = 15 seats. Plenty of room for the typical 6–10 concurrent agents with overflow space.
+
+The existing `~/.pixel-agents/layout.json` is regenerated; the previous landscape layout is backed up to `layout.before-portrait.json`.
+
+## Per-Desk Activity Cards
+
+Each desk's center monitor gets a small always-visible card directly below the screen:
+
+```
+ ┌──────┬──────┬──────┬──────┐
+ │origin│ msf- │pixel-│ pawn │   ← project name (12px, accented)
+ │ -one │ -lab │agents│      │
+ │ Edit │ Push │Think │ Idle │   ← current activity (10px, dim)
+ └──────┴──────┴──────┴──────┘
+```
+
+- **Project name** — derived from the agent assigned to that seat (same source as the existing `folderName` from the cwd parser). Empty if the desk is unoccupied.
+- **Activity** — same plain-English string as the existing `prettyActivity` translator (e.g. "Editing page.tsx", "Pushing to git", "Thinking…", "Idle"). Updates live via WebSocket.
+- **Permission state** — when the agent has a pending request, the card glows orange and a small `!` chevron replaces the activity line. Tapping the card opens the modal.
+
+The cluster banner labels (BUILD / REFACTOR / SHIP / etc.) stay in their existing position above the cluster as a *category header* — the per-desk cards are the *live state*. Both layers visible simultaneously.
+
+Card rendering reuses the existing HTML overlay positioning (similar to `DeskLabels.tsx`); animation cost is negligible.
+
+## Per-Agent Live Feed (Tap a Sprite)
+
+When the user taps a sprite (or hovers on desktop), a bottom sheet (mobile) / side panel (desktop ≥ 768px) slides in titled `Agent #N · <project>`. Contents:
+
+- A scrollable list of cards, latest at the top, oldest at the bottom (most recent first).
+- Each card represents one entry in a per-agent ring buffer maintained by the server:
+  - **Assistant text turns** — show first ~120 chars + a "tap to expand" affordance.
+  - **Tool call** — show "Editing page.tsx" / "Running: pnpm install" / etc. (same `prettyActivity` translator as the desk card). Status pill: green = done, amber = running, orange = pending permission.
+  - **Tool result** — collapsed by default; tap expands to show stdout/stderr summary (first ~10 lines).
+  - **System events** — turn ended, permission resolved, etc., as small dim entries.
+- Auto-tails: as new entries arrive over WS, they fade in at the top.
+- Header has: agent metadata (project, sessionId short hash, model), a "Watch closely" toggle, and a "Send message" button (Phase 2; disabled with tooltip in Phase 1).
+
+The server keeps a per-agent ring buffer of the last **40 entries** in memory. Stored as `Array<FeedEntry>` on the `TrackedAgent`. Broadcast as `agentFeedAppend` and `agentFeedReset` WS messages so any number of clients stay in sync.
+
+Storage cost: ~40 entries × ~500 bytes avg × 20 agents = ~400 KB peak. Negligible.
+
+Past-history backfill on first connection: when a client connects (`webviewReady`), the server sends `agentFeedSnapshot` for every active agent (last 20 entries each). After that the client subscribes to the live append stream.
+
+## Progressive Web App (PWA)
+
+The web app becomes installable on iOS / Android home screens.
+
+**Required:**
+- `webview-ui/public/manifest.json` with `name`, `short_name: "Pixel Agents"`, `display: "standalone"`, theme/background colors matched to the office floor palette, `start_url: "/"`, `orientation: "portrait"`.
+- App icons in `webview-ui/public/icons/` (192, 512, 1024 px — derived from a pixel-style sprite of the office).
+- A minimal **service worker** (`webview-ui/public/sw.js`) with a network-first strategy for the WS endpoint and cache-first for static assets — gives instant load even on flaky cellular.
+- `index.html` updated with `<link rel="manifest">`, `<meta name="theme-color">`, `<meta name="apple-mobile-web-app-capable" content="yes">`.
+- An "Add to Home Screen" hint surfaced once per device on mobile after the first successful permission interaction (so the user understands the value before being prompted).
+
+**Touch UX (already covered in §Mobile Access):**
+- Modal becomes full-height bottom sheet on viewports ≤ 768px.
+- Per-agent feed = bottom sheet (instead of side panel).
+- Pinch-to-zoom + one-finger pan on canvas.
+- Hover-only tooltips also fire on tap.
+- Long-press on a sprite opens the right-click context menu (the "Watch closely" toggle).
+- Tap targets ≥ 44px.
+
+**Push notifications (out of scope for this spec but worth noting):** to wake the user when the app is backgrounded and a permission is pending, we'd need a push service (Web Push, requires VAPID keys, server-side push subscription). Defer; for now the user has to keep the tab open — Tailscale + iOS background tab limits make this acceptable for v1.
+
 ## Phase 2: Full Chat Injection (Spike)
 
 A separate effort scheduled after Phase 1 ships. Goal: let the user type a fresh prompt to any agent from the web app.
@@ -252,25 +349,46 @@ UI: a "Send message" button on each agent's hover overlay → inline composer �
 
 ## File Layout (new + changed)
 
-New:
+New (config & hooks):
 - `~/.pixel-agents/hooks/permission-hook.js` *(already exists; will be replaced/updated)*
 - `~/.pixel-agents/risky-patterns.json` *(default ships with the project, copied on first run)*
 - `~/.pixel-agents/watch-list.json` *(empty default)*
 - `~/.pixel-agents/policy.json` *(default `{ timeoutSec: 30, defaultOnTimeout: "allow", listenAddress: "127.0.0.1" }`)*
 - `~/.pixel-agents/responses.json` *(default ships with the project, copied on first run)*
+
+New (server):
 - `pixel-agents-standalone/server/permissionPolicy.ts` — trigger ladder + config loader.
 - `pixel-agents-standalone/server/configWatcher.ts` — chokidar-based hot reload of all four config files.
-- `pixel-agents-standalone/webview-ui/src/components/PendingQueue.tsx` — top-right badge + drawer.
-- `pixel-agents-standalone/webview-ui/src/components/PermissionModal.tsx` — *(already exists; gets the per-tool preset rendering and inline reason composer)*.
-- `pixel-agents-standalone/webview-ui/src/hooks/useWatchList.ts` — read/write watch list via server endpoints.
+- `pixel-agents-standalone/server/feedBuffer.ts` — per-agent ring buffer + WS event emitters for the live feed.
 
-Changed:
-- `pixel-agents-standalone/server/index.ts` — replace existing inline `/permission/request` + `/permission/respond` with calls into `permissionPolicy.ts`; bind to `policy.listenAddress`.
-- `pixel-agents-standalone/server/types.ts` — add `agentPermissionRequest` payload fields (already partially done) plus `setWatchClosely` client → server message.
-- `pixel-agents-standalone/webview-ui/src/hooks/useExtensionMessages.ts` — handle WS messages for queue updates and watch-list changes.
-- `pixel-agents-standalone/webview-ui/src/App.tsx` — render PendingQueue and the new PermissionModal preset wiring.
-- `pixel-agents-standalone/webview-ui/src/index.css` — mobile breakpoint styles.
-- `README.md` — Tailscale setup instructions.
+New (frontend):
+- `pixel-agents-standalone/webview-ui/src/components/PendingQueue.tsx` — top-right badge + drawer (or top-of-screen on mobile).
+- `pixel-agents-standalone/webview-ui/src/components/AgentFeed.tsx` — bottom sheet / side panel showing the per-agent live feed.
+- `pixel-agents-standalone/webview-ui/src/components/DeskActivityCard.tsx` — the per-desk project + activity card under each monitor.
+- `pixel-agents-standalone/webview-ui/src/hooks/useWatchList.ts` — read/write watch list via server endpoints.
+- `pixel-agents-standalone/webview-ui/src/hooks/useAgentFeeds.ts` — keep per-agent feed buffers in client state.
+
+New (PWA + assets):
+- `pixel-agents-standalone/webview-ui/public/manifest.json`
+- `pixel-agents-standalone/webview-ui/public/sw.js` (service worker)
+- `pixel-agents-standalone/webview-ui/public/icons/{192,512,1024}.png` (pixel-art office icon)
+
+New (layout regeneration):
+- `~/.pixel-agents/layout.before-portrait.json` (auto-backup of current landscape layout)
+- `~/.pixel-agents/layout.json` regenerated to 20×36 portrait via the build script (`scripts/generate-portrait-layout.py` or similar; can also be a one-shot `node` script).
+
+Changed (server):
+- `pixel-agents-standalone/server/index.ts` — replace inline `/permission/request` + `/permission/respond` with calls into `permissionPolicy.ts`; bind to `policy.listenAddress`; integrate `feedBuffer.ts` so each parsed line that's user-visible (assistant text, tool start/done, system) appends to the agent's feed.
+- `pixel-agents-standalone/server/types.ts` — add `agentPermissionRequest` payload fields (partially done), `setWatchClosely` client→server message, `agentFeedAppend` / `agentFeedSnapshot` / `agentFeedReset` server→client messages.
+- `pixel-agents-standalone/server/parser.ts` — emit feed entries alongside existing WS events.
+
+Changed (frontend):
+- `pixel-agents-standalone/webview-ui/src/hooks/useExtensionMessages.ts` — handle queue/feed/watchlist messages.
+- `pixel-agents-standalone/webview-ui/src/App.tsx` — render PendingQueue, AgentFeed sheet, hooked PermissionModal.
+- `pixel-agents-standalone/webview-ui/src/components/DeskLabels.tsx` — keep cluster banner; add per-desk DeskActivityCard rendering for each occupied seat.
+- `pixel-agents-standalone/webview-ui/src/index.css` — mobile breakpoint, sheet transitions, PWA-installed safe-area.
+- `pixel-agents-standalone/webview-ui/index.html` — manifest link, theme-color, mobile-web-app-capable meta.
+- `README.md` — PWA install instructions, Tailscale setup, configuration cookbook for the four `~/.pixel-agents/*.json` files.
 
 ## Out of Scope for This Spec
 
