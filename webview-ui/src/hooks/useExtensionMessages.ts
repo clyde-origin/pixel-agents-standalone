@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import type { OfficeLayout, ToolActivity, FeedEntry } from '../office/types.js'
 import { extractToolName } from '../office/toolUtils.js'
@@ -76,6 +76,10 @@ export interface ExtensionMessageState {
   pending: Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>
   /** Per-agent live feed entries (text turns, tool starts/dones, permission asks, system events). */
   agentFeeds: Record<number, FeedEntry[]>
+  /** Set of sessionIds currently flagged for "watch closely" elevated permissions. */
+  watching: Set<string>
+  /** Toggle the watch flag for a given sessionId; persists to ~/.pixel-agents/watch-list.json via the server. */
+  toggleWatch: (sessionId: string) => Promise<void>
 }
 
 const DESK_ASSIGNMENT_STORAGE_KEY = 'pixel-agents:home-desk-assignments'
@@ -172,6 +176,7 @@ export function useExtensionMessages(
   const [responses, setResponses] = useState<Record<string, ResponseTemplate[]>>({ default: [] })
   const [pending, setPending] = useState<Array<{ agentId: number; folderName?: string; toolName?: string; label?: string; receivedAt: number; requestId: string }>>([])
   const [agentFeeds, setAgentFeeds] = useState<Record<number, FeedEntry[]>>({})
+  const [watching, setWatching] = useState<Set<string>>(new Set())
   const homeDeskAssignmentsRef = useRef<Record<string, string>>(homeDeskAssignments)
   const updateHomeDeskAssignments = (next: Record<string, string>) => {
     homeDeskAssignmentsRef.current = next
@@ -184,7 +189,7 @@ export function useExtensionMessages(
 
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
-    let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string; folderName?: string }> = []
+    let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string; folderName?: string; sessionId?: string }> = []
 
     const handler = (e: MessageEvent) => {
       const msg = e.data
@@ -216,6 +221,10 @@ export function useExtensionMessages(
             assignments = r.updated
           }
           os.addAgent(p.id, p.palette, p.hueShift, seatId, true, p.folderName)
+          if (p.sessionId) {
+            const ch = os.characters.get(p.id)
+            if (ch) ch.sessionId = p.sessionId
+          }
         }
         if (assignments !== homeDeskAssignmentsRef.current) {
           updateHomeDeskAssignments(assignments)
@@ -237,6 +246,11 @@ export function useExtensionMessages(
           updateHomeDeskAssignments(updated)
         }
         os.addAgent(id, undefined, undefined, seatId ?? undefined, undefined, folderName)
+        const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : undefined
+        if (sessionId) {
+          const ch = os.characters.get(id)
+          if (ch) ch.sessionId = sessionId
+        }
         saveAgentSeats(os)
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number
@@ -292,10 +306,11 @@ export function useExtensionMessages(
         const incoming = msg.agents as number[]
         const meta = (msg.agentMeta || {}) as Record<number, { palette?: number; hueShift?: number; seatId?: string }>
         const folderNames = (msg.folderNames || {}) as Record<number, string>
+        const sessionIds = (msg.sessionIds || {}) as Record<number, string>
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id]
-          pendingAgents.push({ id, palette: m?.palette, hueShift: m?.hueShift, seatId: m?.seatId, folderName: folderNames[id] })
+          pendingAgents.push({ id, palette: m?.palette, hueShift: m?.hueShift, seatId: m?.seatId, folderName: folderNames[id], sessionId: sessionIds[id] })
         }
         setAgents((prev) => {
           const ids = new Set(prev)
@@ -595,6 +610,9 @@ export function useExtensionMessages(
           if (next.length > 40) next.shift()
           return { ...prev, [id]: next }
         })
+      } else if (msg.type === 'watchListUpdated') {
+        const arr = Array.isArray(msg.watch) ? (msg.watch as string[]) : []
+        setWatching(new Set(arr))
       }
     }
     window.addEventListener('message', handler)
@@ -602,5 +620,15 @@ export function useExtensionMessages(
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds }
+  const toggleWatch = useCallback(async (sessionId: string) => {
+    const willWatch = !watching.has(sessionId)
+    await fetch('/watch-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, watch: willWatch }),
+    }).catch(() => {})
+    // Server replies and broadcasts watchListUpdated; we update state from there.
+  }, [watching])
+
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds, watching, toggleWatch }
 }

@@ -125,11 +125,12 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets, workspaceFolders, homeDeskAssignments, permissionContexts, responses, pending, agentFeeds, watching, toggleWatch } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
   const [permissionAgentId, setPermissionAgentId] = useState<number | null>(null)
   const [feedAgentId, setFeedAgentId] = useState<number | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ agentId: number; x: number; y: number } | null>(null)
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
   )
@@ -233,6 +234,7 @@ function App() {
         zoom={editor.zoom}
         onZoomChange={editor.handleZoomChange}
         panRef={editor.panRef}
+        onContextMenu={(id, x, y) => setCtxMenu({ agentId: id, x, y })}
       />
 
       <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
@@ -375,6 +377,28 @@ function App() {
           onSelectAgent={handleSelectAgent}
         />
       )}
+
+      {ctxMenu && (() => {
+        const ch = officeState.characters.get(ctxMenu.agentId)
+        if (!ch || !ch.sessionId) return null
+        const sessionId = ch.sessionId
+        const isWatched = watching.has(sessionId)
+        return (
+          <div onClick={() => setCtxMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 999 }}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ position: 'absolute', left: ctxMenu.x, top: ctxMenu.y, background: '#0c0d12', border: '2px solid #FF7A1A', minWidth: 200 }}
+            >
+              <button
+                onClick={async () => { await toggleWatch(sessionId); setCtxMenu(null) }}
+                style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', color: '#e6e6f0', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {isWatched ? '✓ Watching closely' : 'Watch closely'}
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

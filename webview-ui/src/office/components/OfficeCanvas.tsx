@@ -26,9 +26,10 @@ interface OfficeCanvasProps {
   zoom: number
   onZoomChange: (zoom: number) => void
   panRef: React.MutableRefObject<{ x: number; y: number }>
+  onContextMenu?: (agentId: number, x: number, y: number) => void
 }
 
-export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef }: OfficeCanvasProps) {
+export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef, onContextMenu }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -623,14 +624,23 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     if (isEditMode) return
-    // Right-click to walk selected agent to tile
+    // Right-click on an agent sprite — open the watch-closely menu via the parent.
+    const pos = screenToWorld(e.clientX, e.clientY)
+    if (pos) {
+      const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY)
+      if (hitId !== null) {
+        onContextMenu?.(hitId, e.clientX, e.clientY)
+        return
+      }
+    }
+    // Right-click on empty tile to walk selected agent there
     if (officeState.selectedAgentId !== null) {
       const tile = screenToTile(e.clientX, e.clientY)
       if (tile) {
         officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row)
       }
     }
-  }, [isEditMode, officeState, screenToTile])
+  }, [isEditMode, officeState, screenToTile, screenToWorld, onContextMenu])
 
   // Wheel: Ctrl+wheel to zoom, plain wheel/trackpad to pan
   const handleWheel = useCallback(

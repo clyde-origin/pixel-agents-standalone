@@ -197,6 +197,8 @@ export interface Character {
   matrixEffectSeeds: number[]
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string
+  /** Claude Code session id (set when the agent's transcript file is detected). */
+  sessionId?: string
   /** Activity intensity 0-1 — bumped on each tool start, decays over time. Drives typing speed. */
   intensity: number
   /** Seconds until next stretch gesture while active */

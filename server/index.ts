@@ -108,7 +108,11 @@ const policy = new PermissionPolicy(riskyCfg, new Set(watchListCfg.watch));
 
 watchConfigFile(POLICY_PATH, DEFAULT_POLICY, (c) => { policyCfg = c });
 watchConfigFile(RISKY_PATH, DEFAULT_RISKY, (c) => { riskyCfg = c; policy.updateConfig(c) });
-watchConfigFile(WATCH_LIST_PATH, DEFAULT_WATCH_LIST, (c) => { watchListCfg = c; policy.updateWatchList(new Set(c.watch)) });
+watchConfigFile(WATCH_LIST_PATH, DEFAULT_WATCH_LIST, (c) => {
+  watchListCfg = c
+  policy.updateWatchList(new Set(c.watch))
+  broadcast({ type: 'watchListUpdated', watch: c.watch })
+});
 watchConfigFile(RESPONSES_PATH, DEFAULT_RESPONSES, (c) => {
   broadcast({ type: "responsesLoaded", responses: c })
 })
@@ -198,6 +202,7 @@ app.post("/watch-list", (req, res) => {
   watchListCfg = { watch: [...set] };
   policy.updateWatchList(set);
   writeFileSync(WATCH_LIST_PATH, JSON.stringify(watchListCfg, null, 2));
+  broadcast({ type: 'watchListUpdated', watch: [...set] });
   res.json({ ok: true, watch: [...set] });
 });
 
@@ -259,13 +264,18 @@ function sendInitialData(ws: WebSocket): void {
     );
   }
 
+  // Send current watch-list once on connect (before existingAgents so the UI has it ready)
+  ws.send(JSON.stringify({ type: 'watchListUpdated', watch: watchListCfg.watch }));
+
   // Send existing agents with persisted seat metadata
   const agentList = Array.from(agents.values());
   const agentIds = agentList.map((a) => a.id);
   const folderNames: Record<number, string> = {};
+  const sessionIds: Record<number, string> = {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const a of agentList) {
     folderNames[a.id] = a.projectName;
+    sessionIds[a.id] = a.sessionId;
     if (persistedSeats?.[a.id]) {
       const s = persistedSeats[a.id];
       agentMeta[a.id] = { palette: s.palette, hueShift: s.hueShift, seatId: s.seatId ?? undefined };
@@ -274,7 +284,7 @@ function sendInitialData(ws: WebSocket): void {
   for (const a of agents.values()) {
     ws.send(JSON.stringify({ type: 'agentFeedSnapshot', id: a.id, entries: a.feedBuffer.snapshot() }))
   }
-  ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, agentMeta }));
+  ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, sessionIds, agentMeta }));
 
   ws.send(JSON.stringify({
     type: "responsesLoaded",
@@ -360,7 +370,7 @@ watcher.on("fileAdded", (file: WatchedFile) => {
   };
 
   agents.set(file.sessionId, agent);
-  broadcast({ type: "agentCreated", id: agent.id, folderName: agent.projectName });
+  broadcast({ type: "agentCreated", id: agent.id, folderName: agent.projectName, sessionId: file.sessionId });
   console.log(`Agent ${agent.id} joined: ${agent.projectName} (${file.sessionId.slice(0, 8)})`);
 });
 
