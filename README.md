@@ -75,6 +75,49 @@ npm run extract-furniture
 - **[pixel-agents](https://github.com/pablodelucca/pixel-agents)** by Pablo De Lucca — original VS Code extension (MIT License)
 - **[Office Interior Tileset](https://donarg.itch.io/office-interior-tileset-16x16)** by Donarg — pixel art furniture (purchased separately)
 
+## Mobile / remote access
+
+The app runs as a PWA — installable on iOS / Android home screens.
+
+### Local network (LAN only)
+
+Edit `~/.pixel-agents/policy.json` and set `"listenAddress": "0.0.0.0"`. Restart the server. Visit `http://<your-mac-ip>:3456` from any device on the same WiFi.
+
+### Anywhere via Tailscale (recommended)
+
+1. Install Tailscale on your Mac and your phone, sign into the same tailnet.
+2. Edit `~/.pixel-agents/policy.json` to set `"listenAddress": "0.0.0.0"`.
+3. From your phone visit `http://<mac-tailnet-name>:3456`.
+
+### Configuration cookbook
+
+`~/.pixel-agents/risky-patterns.json` — list of patterns that trigger the modal. Edit live; server hot-reloads within ~1s.
+
+`~/.pixel-agents/responses.json` — preset response buttons per tool (Bash, Edit, Write…). Edit live.
+
+`~/.pixel-agents/policy.json` — `timeoutSec`, `defaultOnTimeout` (`allow` or `deny`), `listenAddress`.
+
+`~/.pixel-agents/watch-list.json` — session IDs to watch closely. Toggle via right-click on a sprite (or long-press on mobile).
+
+### Installing the PreToolUse hook
+
+Add to `~/.claude/settings.json` (merge with existing keys, don't replace):
+
+```json
+"hooks": {
+  "PreToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [
+        { "type": "command", "command": "~/.pixel-agents/hooks/permission-hook.js" }
+      ]
+    }
+  ]
+}
+```
+
+To disable, delete that block. The hook script and pixel-agents server stay on disk but become inert.
+
 ## License
 
 MIT

@@ -18,6 +18,7 @@ import { DeskLabels } from './components/DeskLabels.js'
 import { PermissionModal } from './components/PermissionModal.js'
 import { PendingQueue } from './components/PendingQueue.js'
 import { AgentFeed } from './components/AgentFeed.js'
+import { InstallHint } from './components/InstallHint.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -337,6 +338,8 @@ function App() {
         pending={pending}
         onSelect={(id) => setPermissionAgentId(id)}
       />
+
+      <InstallHint />
 
       <PermissionModal
         agentId={permissionAgentId}
