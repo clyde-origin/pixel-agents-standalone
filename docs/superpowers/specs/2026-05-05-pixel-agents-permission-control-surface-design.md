@@ -69,7 +69,7 @@ The server runs each `/permission/request` through this ladder, top to bottom, s
 
 | Rung | Condition | Verdict |
 |------|-----------|---------|
-| 1 | `toolName ∈ READONLY_TOOLS` (Read, Grep, Glob, WebFetch, WebSearch, Task, AskUserQuestion, Task* helpers) | `allow` immediately |
+| 1 | `toolName ∈ READONLY_TOOLS` (Read, Grep, Glob, WebFetch, WebSearch, Task, AskUserQuestion, Task* helpers — hardcoded in `permissionPolicy.ts`, not user-editable) | `allow` immediately |
 | 2 | `sessionId ∈ watchList` | fire modal |
 | 3 | `sessionAllowlist[sessionId]` contains `toolName` (user previously picked "Allow this session") | `allow` immediately |
 | 4 | Tool input matches any rule in `risky-patterns.json` | fire modal |
@@ -158,7 +158,9 @@ Built up during the session as the user picks "Allow this session" from the moda
 └──────────────────────────────────────────────────────────┘
 ```
 
-`Custom feedback…` expands an inline textarea + Send button. Closes the modal on send.
+The buttons rendered in `$ choose a response:` come entirely from `responses.json` — the modal renders one button per entry in the matching tool's list (or `default` if no tool-specific list exists). The shipped defaults include "Custom feedback…" so users always have a freeform escape hatch unless they explicitly delete it. Buttons with `askForReason: true` expand an inline textarea + Send button before submitting; everything else is a one-click action that closes the modal immediately.
+
+The "Watch closely" toggle is reachable via right-click (desktop) or long-press (mobile) on a sprite. Single-click on a sprite continues to behave as before — focuses that agent, and opens the modal if a request is pending.
 
 ### Response template config
 
