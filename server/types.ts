@@ -42,21 +42,8 @@ export type ServerMessage =
   | { type: "agentToolDone"; id: number; toolId: string }
   | { type: "agentToolsClear"; id: number }
   | { type: "agentStatus"; id: number; status: string }
-  | {
-      type: "agentToolPermission";
-      id: number;
-      /** Tool name (e.g. "Bash", "Edit"). Optional for backward-compat. */
-      toolName?: string;
-      /** Raw tool input args, JSON-able. Shown in the permission modal. */
-      toolInput?: Record<string, unknown>;
-      /** The assistant's most recent text immediately before the tool call. */
-      lastAssistantText?: string;
-    }
+  | { type: "agentToolPermission"; id: number; toolName?: string; toolInput?: Record<string, unknown>; lastAssistantText?: string }
   | { type: "agentToolPermissionClear"; id: number }
-  | { type: "subagentToolStart"; id: number; parentToolId: string; toolId: string; status: string }
-  | { type: "subagentToolDone"; id: number; parentToolId: string; toolId: string }
-  | { type: "subagentToolPermission"; id: number; parentToolId: string }
-  | { type: "subagentClear"; id: number; parentToolId: string }
   | {
       type: "agentPermissionRequest";
       id: number;
@@ -64,8 +51,13 @@ export type ServerMessage =
       toolName: string;
       toolInput?: Record<string, unknown>;
       lastAssistantText?: string;
+      label: string;
     }
   | { type: "agentPermissionResolved"; requestId: string; decision: "allow" | "deny" }
+  | { type: "subagentToolStart"; id: number; parentToolId: string; toolId: string; status: string }
+  | { type: "subagentToolDone"; id: number; parentToolId: string; toolId: string }
+  | { type: "subagentToolPermission"; id: number; parentToolId: string }
+  | { type: "subagentClear"; id: number; parentToolId: string }
   | { type: "characterSpritesLoaded"; characters: unknown[] }
   | { type: "floorTilesLoaded"; sprites: unknown[] }
   | { type: "wallTilesLoaded"; sprites: unknown[] }

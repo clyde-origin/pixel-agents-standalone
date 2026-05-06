@@ -15,6 +15,22 @@ import {
   loadDefaultLayout,
 } from "./assetLoader.js";
 import type { TrackedAgent, ServerMessage } from "./types.js";
+import {
+  loadOrInitConfig,
+  RISKY_PATH,
+  RESPONSES_PATH,
+  POLICY_PATH,
+  WATCH_LIST_PATH,
+  DEFAULT_RISKY,
+  DEFAULT_RESPONSES,
+  DEFAULT_POLICY,
+  DEFAULT_WATCH_LIST,
+  type RiskyPatterns,
+  type PolicyConfig,
+  type WatchList,
+} from "./permissionConfig.js";
+import { watchConfigFile } from "./configWatcher.js";
+import { PermissionPolicy } from "./permissionPolicy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || "3456", 10);
@@ -81,72 +97,63 @@ app.use(express.json({ limit: "256kb" }));
 // Serve production build
 app.use(express.static(join(__dirname, "public")));
 
-// ── Permission request bus ──────────────────────────────────
-// PreToolUse hook posts to /permission/request and waits for the user's verdict
-// from the modal (POSTed back to /permission/respond). Read-only tools auto-allow.
-// If no UI clients are connected we also auto-allow so unattended sessions don't stall.
-const READONLY_TOOLS = new Set([
-  "Read", "Grep", "Glob", "WebFetch", "WebSearch",
-  "Task", "AskUserQuestion",
-  "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskOutput", "TaskStop",
-]);
+// ── Config bootstrap (creates ~/.pixel-agents/* on first run) ────────
+let policyCfg: PolicyConfig = loadOrInitConfig(POLICY_PATH, DEFAULT_POLICY);
+let riskyCfg: RiskyPatterns = loadOrInitConfig(RISKY_PATH, DEFAULT_RISKY);
+let watchListCfg: WatchList = loadOrInitConfig(WATCH_LIST_PATH, DEFAULT_WATCH_LIST);
+loadOrInitConfig(RESPONSES_PATH, DEFAULT_RESPONSES); // copy on first run; UI reads it
+
+const policy = new PermissionPolicy(riskyCfg, new Set(watchListCfg.watch));
+
+watchConfigFile(POLICY_PATH, DEFAULT_POLICY, (c) => { policyCfg = c });
+watchConfigFile(RISKY_PATH, DEFAULT_RISKY, (c) => { riskyCfg = c; policy.updateConfig(c) });
+watchConfigFile(WATCH_LIST_PATH, DEFAULT_WATCH_LIST, (c) => { watchListCfg = c; policy.updateWatchList(new Set(c.watch)) });
+
+// ── Pending permission requests ──────────────────────────────────────
 interface PendingPermission {
   requestId: string;
   agentId: number;
-  resolve: (decision: "allow" | "deny") => void;
+  sessionId: string;
+  toolName: string;
+  resolve: (verdict: { decision: "allow" | "deny"; reason?: string; scope?: "once" | "session" }) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
 }
 const pendingPermissions = new Map<string, PendingPermission>();
-const PERMISSION_TIMEOUT_MS = 5 * 60_000; // 5 minutes — long enough to walk away & decide
 let permissionRequestSeq = 1;
 
-function findAgentBySessionId(sessionId: string): TrackedAgent | null {
-  return agents.get(sessionId) ?? null;
-}
-
 app.post("/permission/request", (req, res) => {
-  const body = req.body as {
-    sessionId?: string;
-    toolName?: string;
-    toolInput?: Record<string, unknown>;
-  };
+  const body = req.body as { sessionId?: string; toolName?: string; toolInput?: Record<string, unknown> };
   const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
   const toolName = typeof body.toolName === "string" ? body.toolName : "";
   const toolInput = body.toolInput && typeof body.toolInput === "object" ? body.toolInput : {};
 
-  // Read-only / housekeeping tools always allowed.
-  if (READONLY_TOOLS.has(toolName)) {
-    res.json({ decision: "allow", reason: "readonly-tool" });
-    return;
-  }
-  // No connected UI? Allow immediately so unattended sessions don't hang.
-  if (clients.size === 0) {
-    res.json({ decision: "allow", reason: "no-ui" });
-    return;
-  }
-  const agent = sessionId ? findAgentBySessionId(sessionId) : null;
-  if (!agent) {
-    res.json({ decision: "allow", reason: "unknown-session" });
-    return;
-  }
+  const verdict = policy.evaluate(sessionId, toolName, toolInput);
+  if (verdict.allow) { res.json({ decision: "allow", reason: verdict.reason }); return }
+
+  if (clients.size === 0) { res.json({ decision: "allow", reason: "no-ui" }); return }
+
+  const agent = sessionId ? agents.get(sessionId) : null;
+  if (!agent) { res.json({ decision: "allow", reason: "unknown-session" }); return }
 
   const requestId = `perm-${permissionRequestSeq++}-${Date.now()}`;
+  const timeoutMs = Math.max(5_000, policyCfg.timeoutSec * 1000);
+  const defaultDecision = policyCfg.defaultOnTimeout;
+
   const timeoutHandle = setTimeout(() => {
     if (pendingPermissions.has(requestId)) {
       pendingPermissions.delete(requestId);
-      res.json({ decision: "allow", reason: "timeout" });
-      broadcast({ type: "agentPermissionResolved", requestId, decision: "allow" });
+      res.json({ decision: defaultDecision, reason: "timeout" });
+      broadcast({ type: "agentPermissionResolved", requestId, decision: defaultDecision });
     }
-  }, PERMISSION_TIMEOUT_MS);
+  }, timeoutMs);
 
   pendingPermissions.set(requestId, {
-    requestId,
-    agentId: agent.id,
-    timeoutHandle,
-    resolve: (decision) => {
+    requestId, agentId: agent.id, sessionId, toolName, timeoutHandle,
+    resolve: ({ decision, reason, scope }) => {
       clearTimeout(timeoutHandle);
       pendingPermissions.delete(requestId);
-      res.json({ decision });
+      if (decision === "allow" && scope === "session") policy.allowSession(sessionId, toolName);
+      res.json({ decision, reason });
     },
   });
 
@@ -157,25 +164,37 @@ app.post("/permission/request", (req, res) => {
     toolName,
     toolInput,
     lastAssistantText: agent.lastAssistantText || undefined,
+    label: verdict.label,
   });
 });
 
 app.post("/permission/respond", (req, res) => {
-  const body = req.body as { requestId?: string; decision?: string };
+  const body = req.body as { requestId?: string; decision?: string; reason?: string; scope?: string };
   const requestId = typeof body.requestId === "string" ? body.requestId : "";
   const decisionRaw = typeof body.decision === "string" ? body.decision : "";
+  const reason = typeof body.reason === "string" ? body.reason : undefined;
+  const scope: "once" | "session" = body.scope === "session" ? "session" : "once";
   if (decisionRaw !== "allow" && decisionRaw !== "deny") {
-    res.status(400).json({ ok: false, error: "decision must be allow|deny" });
-    return;
+    res.status(400).json({ ok: false, error: "decision must be allow|deny" }); return;
   }
   const pending = pendingPermissions.get(requestId);
-  if (!pending) {
-    res.status(404).json({ ok: false, error: "no pending request" });
-    return;
-  }
-  pending.resolve(decisionRaw);
-  broadcast({ type: "agentPermissionResolved", requestId, decision: decisionRaw });
+  if (!pending) { res.status(404).json({ ok: false, error: "no pending request" }); return }
+  pending.resolve({ decision: decisionRaw as "allow" | "deny", reason, scope });
+  broadcast({ type: "agentPermissionResolved", requestId, decision: decisionRaw as "allow" | "deny" });
   res.json({ ok: true });
+});
+
+app.post("/watch-list", (req, res) => {
+  const body = req.body as { sessionId?: string; watch?: boolean };
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  const watch = !!body.watch;
+  if (!sessionId) { res.status(400).json({ ok: false, error: "sessionId required" }); return }
+  const set = new Set(watchListCfg.watch);
+  if (watch) set.add(sessionId); else set.delete(sessionId);
+  watchListCfg = { watch: [...set] };
+  policy.updateWatchList(set);
+  writeFileSync(WATCH_LIST_PATH, JSON.stringify(watchListCfg, null, 2));
+  res.json({ ok: true, watch: [...set] });
 });
 
 const server = createServer(app);
@@ -351,9 +370,9 @@ watcher.on("line", (file: WatchedFile, line: string) => {
 
 // Start
 watcher.start();
-server.listen(PORT, () => {
-  console.log(`Pixel Agents server running at http://localhost:${PORT}`);
-  console.log(`Watching ~/.claude/projects/ for active sessions...`);
+server.listen(PORT, policyCfg.listenAddress, () => {
+  console.log(`Pixel Agents server running at http://${policyCfg.listenAddress === "0.0.0.0" ? "<your-ip>" : policyCfg.listenAddress}:${PORT}`)
+  console.log(`Watching ~/.claude/projects/ for active sessions...`)
 });
 
 // Idle shutdown — opt-in only. Standalone mode keeps the server alive so the
