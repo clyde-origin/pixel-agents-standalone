@@ -70,8 +70,8 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
         }
       }
       if (onDesk) {
-        // Lift surface items 6 px so the monitor's base sits on the desk wood, not below it.
-        renderY -= 6
+        // Lift surface items 12 px so the monitor's base sits on the desk wood, not below it.
+        renderY -= 12
       }
     }
 

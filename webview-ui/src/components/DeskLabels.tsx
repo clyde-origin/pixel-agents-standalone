@@ -109,9 +109,9 @@ export function DeskLabels({ officeState, agentTools, containerRef, zoom, panRef
         // Center the label on the middle desk's center column.
         const centerCol = (c.colMin + c.colMax) / 2 + 0.5
         const wx = centerCol * TILE_SIZE
-        // Anchor at the FRONT FACE of the desk — bottom edge of the bottom desk row.
-        // Label hangs just slightly into the aisle below, like a name plate.
-        const wy = (c.labelRow + 1) * TILE_SIZE + 1
+        // Anchor at the TOP of the bottom desk row (= middle of the full 2-tile-tall
+        // desk) so the label sits on the desk wood, centered on the desk surface.
+        const wy = c.labelRow * TILE_SIZE
         const screenX = (deviceOffsetX + wx * zoom) / dpr
         const screenY = (deviceOffsetY + wy * zoom) / dpr
         const projects = projectsByCluster[i]

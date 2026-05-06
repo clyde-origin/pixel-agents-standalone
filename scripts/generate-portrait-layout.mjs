@@ -37,9 +37,11 @@ const DESK_ROWS = [
 ]
 let homeIdx = 0
 for (const dr of DESK_ROWS) for (const c of DESK_COLS) {
-  add(`home-${homeIdx}-chair`, 'chair', c, dr.chair)
-  add(`home-${homeIdx}-desk`,  'desk',  c, dr.desk)
-  add(`home-${homeIdx}-pc`,    'pc',    c, dr.pc)
+  add(`home-${homeIdx}-chair-l`, 'chair', c,     dr.chair)
+  add(`home-${homeIdx}-chair-r`, 'chair', c + 1, dr.chair)
+  add(`home-${homeIdx}-desk`,    'desk',  c,     dr.desk)
+  add(`home-${homeIdx}-pc-l`,    'pc',    c,     dr.pc)
+  add(`home-${homeIdx}-pc-r`,    'pc',    c + 1, dr.pc)
   homeIdx++
 }
 

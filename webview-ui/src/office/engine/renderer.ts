@@ -512,9 +512,9 @@ export function renderActivePCScreens(
     // Quick blink: ~3 Hz square-ish wave; alpha drops briefly each cycle.
     const blinkPhase = ((timeMs * 0.003) + (seed * 0.137)) % 1
     const blink = blinkPhase < 0.06 ? 0.15 : 1
-    // Match the 6 px desk-surface lift applied in layoutToFurnitureInstances so the
+    // Match the 12 px desk-surface lift applied in layoutToFurnitureInstances so the
     // glow lines up with the lifted monitor sprite.
-    const SURFACE_LIFT_PX = 6
+    const SURFACE_LIFT_PX = 12
     const px = offsetX + (t.col * TILE_SIZE + SCREEN_X) * zoom
     const py = offsetY + (t.row * TILE_SIZE + SCREEN_Y - SURFACE_LIFT_PX) * zoom
     const w = SCREEN_W * zoom
