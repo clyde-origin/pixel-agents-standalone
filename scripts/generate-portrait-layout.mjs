@@ -28,21 +28,25 @@ const tileColors = tiles.map((t) =>
 const furniture = []
 const add = (uid, type, col, row) => furniture.push({ uid, type, col, row })
 
-// 12 home desks: 3 rows of 4 (cols 2, 7, 12, 17)
-const DESK_COLS = [2, 7, 12, 17]
-const DESK_ROWS = [
+// 3 paired pods per row × 2 rows = 6 pods. Each pod has 2 desks at columns
+// (pod.col, pod.col + 2). Pod span: cols pod.col .. pod.col + 3 (4 cols wide).
+const HOME_PODS = [{ col: 2 }, { col: 8 }, { col: 14 }]
+const POD_ROWS = [
   { chair: 2,  desk: 3,  pc: 4 },
-  { chair: 6,  desk: 7,  pc: 8 },
   { chair: 10, desk: 11, pc: 12 },
 ]
-let homeIdx = 0
-for (const dr of DESK_ROWS) for (const c of DESK_COLS) {
-  add(`home-${homeIdx}-chair-l`, 'chair', c,     dr.chair)
-  add(`home-${homeIdx}-chair-r`, 'chair', c + 1, dr.chair)
-  add(`home-${homeIdx}-desk`,    'desk',  c,     dr.desk)
-  add(`home-${homeIdx}-pc-l`,    'pc',    c,     dr.pc)
-  add(`home-${homeIdx}-pc-r`,    'pc',    c + 1, dr.pc)
-  homeIdx++
+
+let podIdx = 0
+for (const pr of POD_ROWS) for (const pod of HOME_PODS) {
+  for (const offset of [0, 2]) {
+    const c = pod.col + offset
+    add(`pod-${podIdx}-${offset}-chair-l`, 'chair', c,     pr.chair)
+    add(`pod-${podIdx}-${offset}-chair-r`, 'chair', c + 1, pr.chair)
+    add(`pod-${podIdx}-${offset}-desk`,    'desk',  c,     pr.desk)
+    add(`pod-${podIdx}-${offset}-pc-l`,    'pc',    c,     pr.pc)
+    add(`pod-${podIdx}-${offset}-pc-r`,    'pc',    c + 1, pr.pc)
+  }
+  podIdx++
 }
 
 // 3 stations at row 14
