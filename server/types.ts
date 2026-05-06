@@ -1,3 +1,5 @@
+import type { FeedBuffer, FeedEntry } from './feedBuffer.js'
+
 // Agent activity states
 export type AgentActivity = "idle" | "typing" | "reading" | "waiting" | "permission";
 
@@ -30,6 +32,7 @@ export interface TrackedAgent {
   lastActivityTime: number;
   /** Most recent assistant-message text (concatenated) — used for permission modal context. */
   lastAssistantText: string;
+  feedBuffer: FeedBuffer;
 }
 
 // Messages sent from server to client via WebSocket
@@ -64,7 +67,9 @@ export type ServerMessage =
   | { type: "furnitureAssetsLoaded"; catalog: unknown[]; sprites: Record<string, unknown> }
   | { type: "layoutLoaded"; layout: unknown; version: number }
   | { type: "settingsLoaded"; soundEnabled: boolean }
-  | { type: "responsesLoaded"; responses: Record<string, Array<{ label: string; decision: "allow" | "deny"; scope?: "once" | "session"; reason?: string; askForReason?: boolean }>> };
+  | { type: "responsesLoaded"; responses: Record<string, Array<{ label: string; decision: "allow" | "deny"; scope?: "once" | "session"; reason?: string; askForReason?: boolean }>> }
+  | { type: 'agentFeedAppend';   id: number; entry: FeedEntry }
+  | { type: 'agentFeedSnapshot'; id: number; entries: FeedEntry[] };
 
 // Messages sent from client to server
 export type ClientMessage =

@@ -187,6 +187,9 @@ function handleAssistantMessage(
     .filter((s) => s.length > 0);
   if (textBlocks.length > 0) {
     agent.lastAssistantText = textBlocks.join("\n\n");
+    const textEntry = { kind: 'text' as const, text: agent.lastAssistantText, timestamp: Date.now() }
+    agent.feedBuffer.append(textEntry)
+    emit({ type: 'agentFeedAppend', id: agent.id, entry: textEntry })
   }
 
   const hasToolUse = content.some((b) => b.type === "tool_use");
@@ -208,6 +211,10 @@ function handleAssistantMessage(
         agent.activeTools.set(toolId, { toolId, toolName, status, input });
         agent.activeToolNames.set(toolId, toolName);
         agent.lastActivityTime = Date.now();
+
+        const toolStartEntry = { kind: 'tool_start' as const, toolId, status, timestamp: Date.now() }
+        agent.feedBuffer.append(toolStartEntry)
+        emit({ type: 'agentFeedAppend', id: agent.id, entry: toolStartEntry })
 
         const activity = READING_TOOLS.has(toolName) ? "reading" : "typing";
         agent.activity = activity;
@@ -261,6 +268,10 @@ function handleUserMessage(
 
           agent.activeTools.delete(completedToolId);
           agent.activeToolNames.delete(completedToolId);
+
+          const toolDoneEntry = { kind: 'tool_done' as const, toolId: completedToolId, timestamp: Date.now() }
+          agent.feedBuffer.append(toolDoneEntry)
+          emit({ type: 'agentFeedAppend', id: agent.id, entry: toolDoneEntry })
 
           // Delay the done message slightly (matches upstream)
           const toolId = completedToolId;

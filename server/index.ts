@@ -31,6 +31,7 @@ import {
 } from "./permissionConfig.js";
 import { watchConfigFile } from "./configWatcher.js";
 import { PermissionPolicy } from "./permissionPolicy.js";
+import { FeedBuffer } from "./feedBuffer.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || "3456", 10);
@@ -270,6 +271,9 @@ function sendInitialData(ws: WebSocket): void {
       agentMeta[a.id] = { palette: s.palette, hueShift: s.hueShift, seatId: s.seatId ?? undefined };
     }
   }
+  for (const a of agents.values()) {
+    ws.send(JSON.stringify({ type: 'agentFeedSnapshot', id: a.id, entries: a.feedBuffer.snapshot() }))
+  }
   ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, agentMeta }));
 
   ws.send(JSON.stringify({
@@ -352,6 +356,7 @@ watcher.on("fileAdded", (file: WatchedFile) => {
     hadToolsInTurn: false,
     lastActivityTime: Date.now(),
     lastAssistantText: "",
+    feedBuffer: new FeedBuffer(40),
   };
 
   agents.set(file.sessionId, agent);
