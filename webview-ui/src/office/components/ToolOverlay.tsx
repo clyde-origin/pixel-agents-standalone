@@ -18,6 +18,22 @@ interface ToolOverlayProps {
   onRespondToAgent?: (id: number) => void
 }
 
+/** Strip noise suffixes and shorten long project names so they fit in a tight pill
+ *  above each character (paired-desk pods sit two characters tile-adjacent). */
+function condenseProjectName(name: string, maxLen = 14): string {
+  // Drop common suffix nouns that don't add identification value.
+  let s = name
+  for (const suffix of ['-standalone', '-pwa', '-app', '-web', '-ui', '-frontend', '-backend', '-server', '-client', '-api']) {
+    if (s.toLowerCase().endsWith(suffix)) {
+      s = s.slice(0, -suffix.length)
+      break
+    }
+  }
+  if (s.length <= maxLen) return s
+  // Soft-break long names at hyphens so each segment can stack on its own line.
+  return s.slice(0, maxLen - 1) + '…'
+}
+
 /** Derive a short human-readable activity string from tools/status */
 function getActivityText(
   agentId: number,
@@ -341,18 +357,22 @@ export function ToolOverlay({
                 style={{
                   background: 'var(--pixel-bg)',
                   border: '1px solid var(--pixel-border)',
-                  padding: '1px 6px',
+                  padding: '1px 4px',
                   boxShadow: 'var(--pixel-shadow)',
-                  whiteSpace: 'nowrap',
+                  maxWidth: 72,
+                  textAlign: 'center',
+                  lineHeight: 1.05,
                 }}
               >
                 <span
                   style={{
-                    fontSize: '16px',
+                    fontSize: '11px',
                     color: 'var(--pixel-text-dim)',
+                    wordBreak: 'break-word',
+                    display: 'block',
                   }}
                 >
-                  {displayName}
+                  {condenseProjectName(displayName)}
                 </span>
               </div>
             )}
