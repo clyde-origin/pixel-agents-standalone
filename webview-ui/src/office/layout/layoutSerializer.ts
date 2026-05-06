@@ -70,8 +70,9 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
         }
       }
       if (onDesk) {
-        // Lift surface items 12 px so the monitor's base sits on the desk wood, not below it.
-        renderY -= 12
+        // Lift surface items 20 px so the monitor screen sits above the cluster label
+        // (which lives on the lower portion of the desk surface).
+        renderY -= 20
       }
     }
 
