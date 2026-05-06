@@ -27,16 +27,19 @@ interface ClusterDef {
   tone: 'cool' | 'warm' | 'pink' | 'amber' | 'teal' | 'violet' | 'green'
 }
 
-// Six 3-desk pods. Top clusters: desks rows 3-4, monitors at row 4 — label sits on row 4 desk surface,
-// rendered as a placard centered horizontally and aligned just below the monitor.
-// Bottom clusters: desks rows 11-12, monitors at row 12 — label on row 12.
+// 40-wide grid: 8 desk anchor cols [2, 7, 12, 17, 22, 27, 32, 37] per row, 3 desk rows.
+// Group desks into pairs to form 4 pods across, with two cluster-row groups (top + bottom-ish).
+// Top clusters: desks at rows 2-4 (chair 2, desk 3, pc 4) — label on row 4.
+// Bottom clusters: desks at rows 10-12 (chair 10, desk 11, pc 12) — label on row 12.
 const CLUSTERS: ClusterDef[] = [
-  { colMin: 2,  colMax: 7,  deskRow: 3,  labelRow: 4,  title: 'BUILD',     subtitle: 'New features',   tone: 'cool' },
-  { colMin: 10, colMax: 15, deskRow: 3,  labelRow: 4,  title: 'REFACTOR',  subtitle: 'Cleanup & rework', tone: 'amber' },
-  { colMin: 18, colMax: 23, deskRow: 3,  labelRow: 4,  title: 'SHIP',      subtitle: 'Release & deploy', tone: 'green' },
-  { colMin: 2,  colMax: 7,  deskRow: 11, labelRow: 12, title: 'TEST',      subtitle: 'Verify & QA',    tone: 'teal' },
-  { colMin: 10, colMax: 15, deskRow: 11, labelRow: 12, title: 'REVIEW',    subtitle: 'Read & critique', tone: 'pink' },
-  { colMin: 18, colMax: 23, deskRow: 11, labelRow: 12, title: 'EXPLORE',   subtitle: 'Spikes & research', tone: 'violet' },
+  { colMin: 2,  colMax: 8,  deskRow: 3,  labelRow: 4,  title: 'BUILD',     subtitle: 'New features',     tone: 'cool' },
+  { colMin: 12, colMax: 18, deskRow: 3,  labelRow: 4,  title: 'REFACTOR',  subtitle: 'Cleanup & rework', tone: 'amber' },
+  { colMin: 22, colMax: 28, deskRow: 3,  labelRow: 4,  title: 'SHIP',      subtitle: 'Release & deploy', tone: 'green' },
+  { colMin: 32, colMax: 38, deskRow: 3,  labelRow: 4,  title: 'POLISH',    subtitle: 'Refine & tune',    tone: 'warm' },
+  { colMin: 2,  colMax: 8,  deskRow: 11, labelRow: 12, title: 'TEST',      subtitle: 'Verify & QA',      tone: 'teal' },
+  { colMin: 12, colMax: 18, deskRow: 11, labelRow: 12, title: 'REVIEW',    subtitle: 'Read & critique',  tone: 'pink' },
+  { colMin: 22, colMax: 28, deskRow: 11, labelRow: 12, title: 'EXPLORE',   subtitle: 'Spikes & research', tone: 'violet' },
+  { colMin: 32, colMax: 38, deskRow: 11, labelRow: 12, title: 'INTEGRATE', subtitle: 'Wiring & glue',    tone: 'cool' },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
