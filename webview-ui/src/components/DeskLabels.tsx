@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import { TILE_SIZE } from '../office/types.js'
+import { DeskActivityCard } from './DeskActivityCard.js'
+import type { ToolActivity } from '../office/types.js'
 
 interface DeskLabelsProps {
   officeState: OfficeState
+  agentTools: Record<number, ToolActivity[]>
   containerRef: React.RefObject<HTMLDivElement | null>
   zoom: number
   panRef: React.RefObject<{ x: number; y: number }>
+  onSelectAgent?: (id: number) => void
 }
 
 /** A workgroup pod — bounding box of tiles and the task-type label that sits on the center desk. */
@@ -45,7 +49,7 @@ const TONE_BG: Record<ClusterDef['tone'], string> = {
   green:  'linear-gradient(180deg, rgba(60, 130, 60, 0.94),  rgba(30, 80, 30, 0.94))',
 }
 
-export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabelsProps) {
+export function DeskLabels({ officeState, agentTools, containerRef, zoom, panRef, onSelectAgent }: DeskLabelsProps) {
   // Re-render each animation frame so labels track pan/zoom/camera-follow smoothly.
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -155,6 +159,30 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
               </span>
             )}
           </div>
+        )
+      })}
+      {Array.from(officeState.characters.values()).map((ch) => {
+        if (ch.isSubagent || !ch.seatId) return null
+        const seat = officeState.seats.get(ch.seatId)
+        if (!seat) return null
+        // Card sits on the desk row just below the monitor — anchor at (seatCol, seatRow+2)
+        const wx = (seat.seatCol + 0.5) * TILE_SIZE
+        const wy = (seat.seatRow + 3) * TILE_SIZE
+        const sx = (deviceOffsetX + wx * zoom) / dpr
+        const sy = (deviceOffsetY + wy * zoom) / dpr
+        const tools = agentTools[ch.id] ?? []
+        const pending = tools.some((t) => t.permissionWait && !t.done)
+        const lastTool = [...tools].reverse().find((t) => !t.done)
+        const activity = lastTool ? lastTool.status : (ch.isActive ? 'thinking…' : 'idle')
+        return (
+          <DeskActivityCard
+            key={`card-${ch.id}`}
+            screenX={sx} screenY={sy}
+            project={ch.folderName ?? `Agent ${ch.id}`}
+            activity={activity}
+            pendingPermission={pending}
+            onClick={() => onSelectAgent?.(ch.id)}
+          />
         )
       })}
     </>

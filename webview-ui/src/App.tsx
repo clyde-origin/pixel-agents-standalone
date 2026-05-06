@@ -312,9 +312,11 @@ function App() {
 
       <DeskLabels
         officeState={officeState}
+        agentTools={agentTools}
         containerRef={containerRef}
         zoom={editor.zoom}
         panRef={editor.panRef}
+        onSelectAgent={(id) => setFeedAgentId(id)}
       />
 
       <ToolOverlay
