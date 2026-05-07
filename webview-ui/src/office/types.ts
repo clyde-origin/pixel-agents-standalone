@@ -229,6 +229,10 @@ export interface Character {
   spinTimer: number | null
   /** True for the persistent greeter NPC at the pad — excluded from agent counts and most update logic. */
   isGreeter?: boolean
+  /** Which greeter sprite palette ('gold' = right white-robe goddess, 'green' = left green-robe goddess). */
+  greeterVariant?: 'gold' | 'green'
+  /** SPAWNING agents: which hug stage. 0 = not started; 1 = hugging right (gold); 2 = hugging left (green); 3 = done. */
+  hugStage?: number
 }
 
 export interface ToolEffect {

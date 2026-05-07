@@ -80,35 +80,57 @@ export class OfficeState {
     this.ensureGreeter()
   }
 
-  /** Sentinel id for the persistent greeter NPC at the pad. Far below subagent IDs (which start at -1 and decrement) so no collision. */
-  private static readonly GREETER_ID = -1000000
-  /** Total ms from matrix-spawn start to high-five completion (300 + 600 + 500 + small pad). */
-  private static readonly SPAWN_INTERVAL_MS = 3000
+  /** Sentinel ids for the two persistent greeter NPCs. Far below subagent IDs (which start at -1 and decrement). */
+  private static readonly GREETER_ID = -1000000     // gold/right
+  private static readonly GREETER2_ID = -1000001    // green/left
+  /** Total ms from matrix-spawn start through both hugs (300 + 600 + 1200 + 1200 + buffer). */
+  private static readonly SPAWN_INTERVAL_MS = 3500
   /** Pad tile location (must match SPAWN_PAD_TILE_COL/ROW in renderer.ts). */
   private static readonly PAD_COL = 9
   private static readonly PAD_ROW = 33
-  /** Greeter stands one tile to the right of the pad center. */
+  /** Gold goddess stands two tiles to the right of the pad center (col 11). */
   private static readonly GREETER_COL = 11
   private static readonly GREETER_ROW = 33
+  /** Green goddess stands two tiles to the left of the pad center (col 7), symmetric. */
+  private static readonly GREETER2_COL = 7
+  private static readonly GREETER2_ROW = 33
 
-  /** Spawn the persistent greeter NPC if not yet placed. */
+  /** Spawn the persistent greeter NPCs (one on each side of the pad) if not yet placed. */
   private ensureGreeter(): void {
     if (this.greeterInitialized) return
     this.greeterInitialized = true
-    const id = OfficeState.GREETER_ID
-    // Don't recreate if for some reason it's already present.
-    if (this.characters.has(id)) return
-    const ch = createCharacter(id, 4, null, null, 30)
-    ch.tileCol = OfficeState.GREETER_COL
-    ch.tileRow = OfficeState.GREETER_ROW
-    ch.x = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
-    ch.y = OfficeState.GREETER_ROW * TILE_SIZE + TILE_SIZE / 2
-    ch.dir = Direction.LEFT // face the pad
-    ch.state = CharacterState.IDLE // standing pose; updateCharacter early-returns for greeter
-    ch.isGreeter = true
-    ch.isActive = false
-    ch.seatId = null
-    this.characters.set(id, ch)
+
+    // Gold goddess (right of pad).
+    if (!this.characters.has(OfficeState.GREETER_ID)) {
+      const ch = createCharacter(OfficeState.GREETER_ID, 4, null, null, 30)
+      ch.tileCol = OfficeState.GREETER_COL
+      ch.tileRow = OfficeState.GREETER_ROW
+      ch.x = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+      ch.y = OfficeState.GREETER_ROW * TILE_SIZE + TILE_SIZE / 2
+      ch.dir = Direction.LEFT // face the pad
+      ch.state = CharacterState.IDLE
+      ch.isGreeter = true
+      ch.greeterVariant = 'gold'
+      ch.isActive = false
+      ch.seatId = null
+      this.characters.set(OfficeState.GREETER_ID, ch)
+    }
+
+    // Green goddess (left of pad).
+    if (!this.characters.has(OfficeState.GREETER2_ID)) {
+      const ch = createCharacter(OfficeState.GREETER2_ID, 2, null, null, 0)
+      ch.tileCol = OfficeState.GREETER2_COL
+      ch.tileRow = OfficeState.GREETER2_ROW
+      ch.x = OfficeState.GREETER2_COL * TILE_SIZE + TILE_SIZE / 2
+      ch.y = OfficeState.GREETER2_ROW * TILE_SIZE + TILE_SIZE / 2
+      ch.dir = Direction.RIGHT // face the pad
+      ch.state = CharacterState.IDLE
+      ch.isGreeter = true
+      ch.greeterVariant = 'green'
+      ch.isActive = false
+      ch.seatId = null
+      this.characters.set(OfficeState.GREETER2_ID, ch)
+    }
   }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
@@ -1013,51 +1035,71 @@ export class OfficeState {
         continue // skip normal FSM while effect is active
       }
 
-      // Greeter NPC: skip all wandering/trip/seat logic. Drive sprite + hug-position sync, then continue.
+      // Greeter NPCs (gold right, green left): skip all wandering/trip/seat logic.
+      // Lean toward a hugging partner if one is in the matching hug stage; otherwise return home.
       if (ch.isGreeter) {
-        // Detect a spawning character in the hug phase (negative spinTimer) and lean toward them.
+        const isGold = ch.greeterVariant !== 'green'
+        const homeCol = isGold ? OfficeState.GREETER_COL : OfficeState.GREETER2_COL
+        const homeX = homeCol * TILE_SIZE + TILE_SIZE / 2
+
+        // Match a SPAWNING agent to this greeter only when the agent is in this greeter's hug stage:
+        //   stage 1 = gold (right), stage 2 = green (left).
+        const myStage = isGold ? 1 : 2
         let hugPartner: Character | null = null
         for (const other of this.characters.values()) {
           if (other.id === ch.id) continue
-          if (other.state === CharacterState.SPAWNING && other.spinTimer !== null && other.spinTimer < 0) {
+          if (
+            other.state === CharacterState.SPAWNING &&
+            other.spinTimer !== null &&
+            other.spinTimer < 0 &&
+            other.hugStage === myStage
+          ) {
             hugPartner = other
             break
           }
         }
-        const greeterHomeX = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+
         if (hugPartner) {
-          ch.dir = Direction.LEFT
-          // Lean LEFT toward partner so their sprites visually contact (~6px overlap).
-          ch.x = greeterHomeX - 6
-        } else {
-          ch.x = greeterHomeX
-          if (ch.bubbleType === 'highfive') {
-            ch.bubbleType = null
-            ch.bubbleTimer = 0
+          // Face the pad and lean 6px toward the partner so sprites contact.
+          if (isGold) {
+            ch.dir = Direction.LEFT
+            ch.x = homeX - 6
+          } else {
+            ch.dir = Direction.RIGHT
+            ch.x = homeX + 6
           }
+        } else {
+          ch.x = homeX
+          ch.dir = isGold ? Direction.LEFT : Direction.RIGHT
         }
         updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
         continue
       }
 
-      // SPAWNING agents: hold position next to greeter during hug phase, then tick state machine.
+      // SPAWNING agents: pin position based on hug stage, then tick state machine.
       if (ch.state === CharacterState.SPAWNING) {
+        const padX = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
+        const padY = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
         if (ch.spinTimer !== null && ch.spinTimer < 0) {
-          // Hug phase: pin the agent's x just left of the greeter so their sprites overlap.
-          const greeterHomeX = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
-          ch.x = greeterHomeX - 10
-          ch.y = OfficeState.GREETER_ROW * TILE_SIZE + TILE_SIZE / 2
+          // Hug phase: lunge against the matching greeter (sprites overlap by 10px).
+          if (ch.hugStage === 2) {
+            const greenX = OfficeState.GREETER2_COL * TILE_SIZE + TILE_SIZE / 2
+            ch.x = greenX + 10
+          } else {
+            const goldX = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+            ch.x = goldX - 10
+          }
+          ch.y = padY
         } else if (ch.spinTimer !== null && ch.spinTimer >= 0) {
-          // Spin phase: hold position on the pad center.
-          ch.x = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
-          ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
+          // Spin phase: hold on the pad.
+          ch.x = padX
+          ch.y = padY
         }
         updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
-        // After the SPAWNING update may have transitioned the agent to IDLE, snap back to the
-        // pad tile so pathfinding starts from a real walkable tile.
+        // When SPAWNING completes, snap back to pad tile so pathfinding starts cleanly.
         if (ch.state !== CharacterState.SPAWNING) {
-          ch.x = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
-          ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
+          ch.x = padX
+          ch.y = padY
           ch.tileCol = OfficeState.PAD_COL
           ch.tileRow = OfficeState.PAD_ROW
         }

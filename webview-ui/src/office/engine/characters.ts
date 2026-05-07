@@ -4,7 +4,7 @@ import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../ty
 /** Probability that an idle wander step will target a lounge tile (FLOOR_2) when any exist. */
 const LOUNGE_BIAS_PROBABILITY = 0.75
 import type { CharacterSprites } from '../sprites/spriteData.js'
-import { getGreeterSprite } from '../sprites/spriteData.js'
+import { getGreeterSprite, GREETER_PALETTE, GREETER2_PALETTE } from '../sprites/spriteData.js'
 import { findPath } from '../layout/tileMap.js'
 import {
   WALK_SPEED_PX_PER_SEC,
@@ -357,6 +357,7 @@ export function updateCharacter(
         ch.frameTimer = 0
         break
       }
+      const HUG_DURATION_MS = 1200
       if (ch.spinTimer >= 0) {
         // Spin phase: cycle DOWN → RIGHT → UP → LEFT every 150ms over 600ms total.
         const SPIN_DURATION_MS = 600
@@ -366,22 +367,31 @@ export function updateCharacter(
         ch.dir = dirs[phase]
         ch.spinTimer += dt * 1000
         if (ch.spinTimer >= SPIN_DURATION_MS) {
-          // Begin hug phase: lunge close to the greeter (col 11) so their sprites overlap.
-          ch.spinTimer = -1200
+          // Begin first hug: gold goddess on the right (col 11). Face RIGHT.
+          ch.spinTimer = -HUG_DURATION_MS
           ch.dir = Direction.RIGHT
+          ch.hugStage = 1
         }
       } else {
-        // Hug phase: hold position lunged against the greeter, facing RIGHT.
-        // Position is set externally (in OfficeState.update) so we can also nudge the greeter.
+        // Hug phase. Position is set externally (in OfficeState.update). Stage determines facing
+        // and which greeter we're lunging into.
         ch.spinTimer += dt * 1000
-        ch.dir = Direction.RIGHT
+        ch.dir = ch.hugStage === 2 ? Direction.LEFT : Direction.RIGHT
         if (ch.spinTimer >= 0) {
-          // Done: clear spawn phase, transition to IDLE so pathfind kicks in.
-          ch.spinTimer = null
-          ch.dir = Direction.DOWN
-          ch.state = CharacterState.IDLE
-          ch.frame = 0
-          ch.frameTimer = 0
+          if (ch.hugStage === 1) {
+            // First hug done — start second hug (green goddess on the left, col 7).
+            ch.spinTimer = -HUG_DURATION_MS
+            ch.hugStage = 2
+            ch.dir = Direction.LEFT
+          } else {
+            // Both hugs done — clear spawn phase, transition to IDLE so pathfind kicks in.
+            ch.spinTimer = null
+            ch.hugStage = 0
+            ch.dir = Direction.DOWN
+            ch.state = CharacterState.IDLE
+            ch.frame = 0
+            ch.frameTimer = 0
+          }
         }
       }
       break
@@ -391,9 +401,10 @@ export function updateCharacter(
 
 /** Get the correct sprite frame for a character's current state and direction */
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
-  // Goddess greeter renders with a dedicated sprite set (long hair + white robe).
+  // Goddess greeter renders with a dedicated sprite set (long hair + flowing dress).
   if (ch.isGreeter) {
-    return getGreeterSprite(ch.dir)
+    const palette = ch.greeterVariant === 'green' ? GREETER2_PALETTE : GREETER_PALETTE
+    return getGreeterSprite(ch.dir, palette)
   }
   switch (ch.state) {
     case CharacterState.TYPE:
