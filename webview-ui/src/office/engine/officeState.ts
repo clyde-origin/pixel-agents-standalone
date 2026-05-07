@@ -143,6 +143,18 @@ export class OfficeState {
     this.rebuildFurnitureInstances()
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
 
+    // Clear all trip state — trip slot coords (ping-pong, beanbag, bookshelf positions) may
+    // have moved with the new layout, so existing trips are stale. Next tick's desiredTripFor
+    // will reassign cleanly.
+    this.occupiedTripTiles.clear()
+    for (const ch of this.characters.values()) {
+      if (ch.isGreeter) continue
+      ch.tripMode = null
+      ch.tripTile = null
+      ch.path = []
+      ch.moveProgress = 0
+    }
+
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
       for (const ch of this.characters.values()) {
