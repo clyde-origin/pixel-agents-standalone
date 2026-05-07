@@ -21,8 +21,8 @@ interface ClusterDef {
 }
 
 const CLUSTERS: ClusterDef[] = [
-  // Hero MERGE TO MAIN — chair at row 1, desk at rows 2-3 → label on row 3 (bottom desk row).
-  { centerCol: 10, labelRow: 3, title: 'MERGE TO MAIN', tone: 'green' },
+  // Hero MERGE TO MAIN — lowered into the carpet: chair row 3, desk row 4, pc row 5 → label on 5.
+  { centerCol: 10, labelRow: 5, title: 'MERGE TO MAIN', tone: 'green' },
 
   // 12 stations: pod rows start at chair row 6, each pod is 3 rows tall.
   // labelRow = chair_row + 1 (top desk row, above monitor area).

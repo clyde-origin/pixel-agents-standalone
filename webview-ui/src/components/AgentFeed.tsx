@@ -22,20 +22,20 @@ export function AgentFeed({ agentId, folderName, entries, isMobile, onClose, onB
       : { position: 'fixed', right: 0, top: 0, bottom: 0, width: 380, background: '#0c0d12', borderLeft: '2px solid #FF7A1A', zIndex: 800, display: 'flex', flexDirection: 'column' }
   return (
     <div style={wrapperStyle}>
-      <div style={{ background: '#FF7A1A', color: '#1a0a00', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 24 }}>
+      <div style={{ background: '#FF7A1A', color: '#1a0a00', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {onBack && (
-            <button onClick={onBack} title="Back to all agents" style={{ background: 'transparent', border: 'none', color: '#1a0a00', cursor: 'pointer', fontWeight: 700, padding: '0 6px', fontSize: 22 }}>←</button>
+            <button onClick={onBack} title="Back to all agents" style={{ background: 'transparent', border: 'none', color: '#1a0a00', cursor: 'pointer', fontWeight: 700, padding: '0 6px', fontSize: 11 }}>←</button>
           )}
           <span>Agent #{agentId}{folderName ? ` · ${folderName}` : ''}</span>
         </div>
         {!onBack && (
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#1a0a00', fontSize: 24, lineHeight: 1, cursor: 'pointer' }}>×</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#1a0a00', fontSize: 12, lineHeight: 1, cursor: 'pointer' }}>×</button>
         )}
       </div>
       <div className="pixel-mono" style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12, color: '#e6e6f0' }}>
         {ordered.map((e, i) => <FeedCard key={i} entry={e} />)}
-        {ordered.length === 0 && <div style={{ color: '#7d8694', textAlign: 'center', marginTop: 32, fontSize: 28 }}>No activity yet.</div>}
+        {ordered.length === 0 && <div style={{ color: '#7d8694', textAlign: 'center', marginTop: 32, fontSize: 14 }}>No activity yet.</div>}
       </div>
     </div>
   )
@@ -44,8 +44,8 @@ export function AgentFeed({ agentId, folderName, entries, isMobile, onClose, onB
 function FeedCard({ entry }: { entry: FeedEntry }) {
   const ts = new Date(entry.timestamp).toLocaleTimeString()
   const card = (color: string, label: string, body: React.ReactNode) => (
-    <div style={{ background: '#16181f', border: `1px solid ${color}33`, borderLeft: `5px solid ${color}`, padding: '20px 24px', fontSize: 44, lineHeight: 1.35 }}>
-      <div style={{ color: '#7d8694', fontSize: 24, marginBottom: 12 }}>{ts} · {label}</div>
+    <div style={{ background: '#16181f', border: `1px solid ${color}33`, borderLeft: `5px solid ${color}`, padding: '20px 24px', fontSize: 22, lineHeight: 1.35 }}>
+      <div style={{ color: '#7d8694', fontSize: 12, marginBottom: 12 }}>{ts} · {label}</div>
       <div style={{ wordBreak: 'break-word' }}>{body}</div>
     </div>
   )

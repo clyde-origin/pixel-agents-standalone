@@ -37,13 +37,14 @@ for (let r = 4; r < LOUNGE_TOP; r++) {
 const furniture = []
 const add = (uid, type, col, row) => furniture.push({ uid, type, col, row })
 
-// Hero desk at top center: 2 chairs + 1 desk (2-wide) + 2 PCs (dual-seat).
+// Hero desk lowered into the violet carpet so the agent's overlay (project name + state)
+// has 3 rows of clear space above it before hitting the top wall.
 const HERO_COL = 9
-add('hero-merge-chair-l', 'chair', HERO_COL,     1)
-add('hero-merge-chair-r', 'chair', HERO_COL + 1, 1)
-add('hero-merge-desk',    'desk',  HERO_COL,     2)
-add('hero-merge-pc-l',    'pc',    HERO_COL,     3)
-add('hero-merge-pc-r',    'pc',    HERO_COL + 1, 3)
+add('hero-merge-chair-l', 'chair', HERO_COL,     3)
+add('hero-merge-chair-r', 'chair', HERO_COL + 1, 3)
+add('hero-merge-desk',    'desk',  HERO_COL,     4)
+add('hero-merge-pc-l',    'pc',    HERO_COL,     5)
+add('hero-merge-pc-r',    'pc',    HERO_COL + 1, 5)
 
 function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 
