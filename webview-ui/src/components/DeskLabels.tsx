@@ -104,7 +104,7 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
               position: 'absolute',
               left: screenX,
               top: screenY,
-              transform: 'translate(-50%, -100%)',
+              transform: 'translate(-50%, -200%)',
               pointerEvents: 'none',
               zIndex: 30,
             }}
