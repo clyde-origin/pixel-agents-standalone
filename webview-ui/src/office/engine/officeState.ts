@@ -825,18 +825,10 @@ export class OfficeState {
   }
 
   /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
-    // Idle (turn ended) → beanbag
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | null {
     if (!ch.isActive) return 'beanbag'
-    // Active + reading tool currently running → walk to a bookshelf
-    if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) {
-      return 'bookshelf'
-    }
-    // Active + no tool for 30+ seconds → pace in an aisle between desk rows
-    if (ch.lastNoToolTime !== null && now - ch.lastNoToolTime > THINKING_THRESHOLD_SEC) {
-      return 'pacing'
-    }
-    return null
+    if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) return 'bookshelf'
+    return null  // No pacing — compact layout has no inter-pod aisles
   }
 
   update(dt: number): void {

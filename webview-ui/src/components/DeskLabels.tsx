@@ -21,24 +21,24 @@ interface ClusterDef {
 }
 
 const CLUSTERS: ClusterDef[] = [
-  // Hero desk at top center
-  { centerCol: 10, labelRow: 6,  title: 'MERGE TO MAIN', tone: 'green' },
+  // Hero MERGE TO MAIN — chair at row 1, desk at rows 2-3 → label on row 3 (bottom desk row).
+  { centerCol: 10, labelRow: 3, title: 'MERGE TO MAIN', tone: 'green' },
 
-  // Each pod row: chair at row R, desk top R+1, desk bottom (PC) R+2.
-  // Label centered on middle desk of the 3-desk pod (left pod center = col 4, right pod center = col 16).
-  // Pod 0 starts at row 8, each pod is 4 rows tall (3 furniture + 1 aisle).
-  { centerCol: 4,  labelRow: 10, title: 'BUILD',          tone: 'cool' },
-  { centerCol: 16, labelRow: 10, title: 'REFACTOR',       tone: 'amber' },
-  { centerCol: 4,  labelRow: 14, title: 'BUILDS & TESTS', tone: 'warm' },
-  { centerCol: 16, labelRow: 14, title: 'GIT & PRS',      tone: 'pink' },
-  { centerCol: 4,  labelRow: 18, title: 'TEST',           tone: 'teal' },
-  { centerCol: 16, labelRow: 18, title: 'SHIP',           tone: 'green' },
-  { centerCol: 4,  labelRow: 22, title: 'REVIEW',         tone: 'pink' },
-  { centerCol: 16, labelRow: 22, title: 'EXPLORE',        tone: 'violet' },
-  { centerCol: 4,  labelRow: 26, title: 'DEBUG',          tone: 'violet' },
-  { centerCol: 16, labelRow: 26, title: 'DEPLOY',         tone: 'green' },
-  { centerCol: 4,  labelRow: 30, title: 'DOCS',           tone: 'cool' },
-  { centerCol: 16, labelRow: 30, title: 'REVIEW & DOCS',  tone: 'amber' },
+  // 12 stations: pod rows start at chair row 6, each pod is 3 rows tall.
+  // labelRow = chair_row + 1 (top desk row, above monitor area).
+  // Left column center = col 4, right column center = col 16.
+  { centerCol: 4,  labelRow: 7,  title: 'BUILD',           tone: 'cool' },
+  { centerCol: 16, labelRow: 7,  title: 'REFACTOR',        tone: 'amber' },
+  { centerCol: 4,  labelRow: 10, title: 'BUILDS & TESTS',  tone: 'warm' },
+  { centerCol: 16, labelRow: 10, title: 'GIT & PRS',       tone: 'pink' },
+  { centerCol: 4,  labelRow: 13, title: 'TEST',            tone: 'teal' },
+  { centerCol: 16, labelRow: 13, title: 'SHIP',            tone: 'green' },
+  { centerCol: 4,  labelRow: 16, title: 'REVIEW',          tone: 'pink' },
+  { centerCol: 16, labelRow: 16, title: 'EXPLORE',         tone: 'violet' },
+  { centerCol: 4,  labelRow: 19, title: 'DEBUG',           tone: 'violet' },
+  { centerCol: 16, labelRow: 19, title: 'DEPLOY',          tone: 'green' },
+  { centerCol: 4,  labelRow: 22, title: 'DOCS',            tone: 'cool' },
+  { centerCol: 16, labelRow: 22, title: 'REVIEW & DOCS',   tone: 'amber' },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
