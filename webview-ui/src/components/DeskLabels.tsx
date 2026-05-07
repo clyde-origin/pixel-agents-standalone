@@ -92,8 +92,8 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
         // Center the label on the paired-desk pod's seam (centerCol = pod.col + 2).
         const wx = c.centerCol * TILE_SIZE
         // Anchor at the world-y of the desk's bottom edge (labelRow * TILE_SIZE).
-        // The transform places the label's BOTTOM at that anchor so the label sits
-        // ABOVE the desk's bottom edge — never covering the monitor screen.
+        // The transform places the label's BOTTOM at that anchor — label sits
+        // as a thin band right above the bottom edge of the desk.
         const wy = c.labelRow * TILE_SIZE
         const screenX = (deviceOffsetX + wx * zoom) / dpr
         const screenY = (deviceOffsetY + wy * zoom) / dpr
@@ -111,12 +111,12 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
           >
             <span
               style={{
-                fontSize: '10px',
+                fontSize: '8px',
                 lineHeight: 1,
-                padding: '2px 6px',
+                padding: '1px 5px',
                 background: TONE_BG[c.tone],
                 color: '#f4f4ff',
-                border: '1px solid rgba(255,255,255,0.25)',
+                border: 'none',
                 borderRadius: 0,
                 whiteSpace: 'nowrap',
                 fontWeight: 700,
