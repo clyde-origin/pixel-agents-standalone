@@ -213,12 +213,12 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         }
 
         // On desktop the office is right-anchored flush against the panel's left edge:
-        // offsetX = (w - mapW)/2 + panX, set panX = w - mapW → offsetX = w - mapW.
+        // offsetX = (w - mapW)/2 + panX. To get offsetX = w - mapW, set panX = (w - mapW)/2.
         // (zoom is in device-px-per-sprite-px, so mapW is already in device px.)
         const layoutForOffset = officeState.getLayout()
         const mapWdp = layoutForOffset.cols * TILE_SIZE * zoom
         const rightAlignPanX = isDesktop
-          ? Math.round(w - mapWdp)
+          ? Math.round((w - mapWdp) / 2)
           : Math.round(panRef.current.x)
 
         const { offsetX, offsetY } = renderFrame(

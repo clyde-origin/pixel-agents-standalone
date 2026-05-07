@@ -171,7 +171,7 @@ export function ToolOverlay({
   // On desktop the office is right-anchored within the canvas, so the overlay must apply
   // the same right-align offset (matching OfficeCanvas's renderFrame call).
   const isDesktop = window.matchMedia('(min-width: 769px)').matches
-  const panX = isDesktop ? canvasW - mapW : panRef.current.x
+  const panX = isDesktop ? (canvasW - mapW) / 2 : panRef.current.x
   const panY = isDesktop ? 0 : panRef.current.y
   const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panX)
   const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panY)
