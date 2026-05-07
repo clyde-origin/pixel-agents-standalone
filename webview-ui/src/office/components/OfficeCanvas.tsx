@@ -212,13 +212,13 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           characters: officeState.characters,
         }
 
-        // On desktop the office is right-anchored within its (now-correct) canvas:
-        // offsetX = (w - mapW)/2 + panX, set panX = (w - mapW)/2 → offsetX = w - mapW.
+        // On desktop the office is right-anchored flush against the panel's left edge:
+        // offsetX = (w - mapW)/2 + panX, set panX = w - mapW → offsetX = w - mapW.
         // (zoom is in device-px-per-sprite-px, so mapW is already in device px.)
         const layoutForOffset = officeState.getLayout()
         const mapWdp = layoutForOffset.cols * TILE_SIZE * zoom
         const rightAlignPanX = isDesktop
-          ? Math.round((w - mapWdp) / 2)
+          ? Math.round(w - mapWdp)
           : Math.round(panRef.current.x)
 
         const { offsetX, offsetY } = renderFrame(
@@ -278,7 +278,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         const availW = cssW * dpr
         const availH = cssH * dpr
         const z = Math.min(availW / officeW, availH / officeH)
-        onZoomChange(Math.max(z, 0.5))
+        // No floor — always show the full office, even on tiny viewports.
+        onZoomChange(Math.max(z, 0.1))
         // Snap pan to 0 so the office is centered in its region every frame.
         panRef.current = { x: 0, y: 0 }
         return
@@ -286,11 +287,11 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
 
       if (!isStandalone) return
 
-      // Mobile / PWA standalone — cover-fit (existing behavior).
+      // Mobile / PWA standalone — contain-fit so the whole office is always visible.
       const zW = (cssW * dpr) / (layout.cols * 16)
       const zH = (cssH * dpr) / (layout.rows * 16)
-      const cover = Math.max(zW, zH)
-      onZoomChange(cover)
+      const contain = Math.min(zW, zH)
+      onZoomChange(contain)
     }
 
     fit()

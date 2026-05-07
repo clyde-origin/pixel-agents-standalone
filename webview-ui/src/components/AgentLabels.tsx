@@ -33,7 +33,10 @@ export function AgentLabels({
     return () => cancelAnimationFrame(rafId)
   }, [])
 
-  const el = containerRef.current
+  // Read the canvas shell's rect (smaller than the App container on desktop) so overlay
+  // positioning math matches the actual canvas geometry.
+  const shell = document.querySelector('.pixel-canvas-shell') as HTMLElement | null
+  const el = shell ?? containerRef.current
   if (!el) return null
   const rect = el.getBoundingClientRect()
   const dpr = window.devicePixelRatio || 1
@@ -43,8 +46,13 @@ export function AgentLabels({
   const layout = officeState.getLayout()
   const mapW = layout.cols * TILE_SIZE * zoom
   const mapH = layout.rows * TILE_SIZE * zoom
-  const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panRef.current.x)
-  const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panRef.current.y)
+  // On desktop the office is right-anchored within the canvas, so the overlay must apply
+  // the same right-align offset (matching OfficeCanvas's renderFrame call).
+  const isDesktop = window.matchMedia('(min-width: 769px)').matches
+  const panX = isDesktop ? canvasW - mapW : panRef.current.x
+  const panY = isDesktop ? 0 : panRef.current.y
+  const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panX)
+  const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panY)
 
   // Build sub-agent label lookup
   const subLabelMap = new Map<number, string>()
