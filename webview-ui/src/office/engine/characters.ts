@@ -366,27 +366,19 @@ export function updateCharacter(
         ch.dir = dirs[phase]
         ch.spinTimer += dt * 1000
         if (ch.spinTimer >= SPIN_DURATION_MS) {
-          // Begin high-five phase: face the greeter (RIGHT, since greeter is at col 11 east of pad col 9).
-          ch.spinTimer = -1500
+          // Begin hug phase: lunge close to the greeter (col 11) so their sprites overlap.
+          ch.spinTimer = -1200
           ch.dir = Direction.RIGHT
-          ch.bubbleType = 'highfive'
-          ch.bubbleTimer = 1500
         }
       } else {
-        // High-five phase: spinTimer is negative milliseconds remaining, ticks toward 0.
+        // Hug phase: hold position lunged against the greeter, facing RIGHT.
+        // Position is set externally (in OfficeState.update) so we can also nudge the greeter.
         ch.spinTimer += dt * 1000
-        // Bubble timer mirrors the negative timer.
-        if (ch.bubbleType === 'highfive') {
-          ch.bubbleTimer = Math.max(0, -ch.spinTimer)
-        }
+        ch.dir = Direction.RIGHT
         if (ch.spinTimer >= 0) {
           // Done: clear spawn phase, transition to IDLE so pathfind kicks in.
           ch.spinTimer = null
           ch.dir = Direction.DOWN
-          if (ch.bubbleType === 'highfive') {
-            ch.bubbleType = null
-            ch.bubbleTimer = 0
-          }
           ch.state = CharacterState.IDLE
           ch.frame = 0
           ch.frameTimer = 0

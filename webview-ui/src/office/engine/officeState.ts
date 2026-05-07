@@ -1013,30 +1013,54 @@ export class OfficeState {
         continue // skip normal FSM while effect is active
       }
 
-      // Greeter NPC: skip all wandering/trip/seat logic. Drive sprite + high-five mirror, then continue.
+      // Greeter NPC: skip all wandering/trip/seat logic. Drive sprite + hug-position sync, then continue.
       if (ch.isGreeter) {
-        // Detect a nearby spawning character in the high-five phase and sync facing+bubble.
-        let activeHighfivePartner: Character | null = null
+        // Detect a spawning character in the hug phase (negative spinTimer) and lean toward them.
+        let hugPartner: Character | null = null
         for (const other of this.characters.values()) {
           if (other.id === ch.id) continue
           if (other.state === CharacterState.SPAWNING && other.spinTimer !== null && other.spinTimer < 0) {
-            activeHighfivePartner = other
+            hugPartner = other
             break
           }
         }
-        if (activeHighfivePartner) {
-          ch.dir = Direction.LEFT // greeter faces the pad (LEFT from col 11 toward col 9)
-          ch.bubbleType = 'highfive'
-          ch.bubbleTimer = Math.max(0, -activeHighfivePartner.spinTimer)
+        const greeterHomeX = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+        if (hugPartner) {
+          ch.dir = Direction.LEFT
+          // Lean LEFT toward partner so their sprites visually contact (~6px overlap).
+          ch.x = greeterHomeX - 6
+        } else {
+          ch.x = greeterHomeX
+          if (ch.bubbleType === 'highfive') {
+            ch.bubbleType = null
+            ch.bubbleTimer = 0
+          }
         }
-        // Drive idle frame timer + bubble decay through updateCharacter's greeter early-return.
         updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
         continue
       }
 
-      // SPAWNING agents: just tick the spin/high-five state machine and skip trip/wander logic.
+      // SPAWNING agents: hold position next to greeter during hug phase, then tick state machine.
       if (ch.state === CharacterState.SPAWNING) {
+        if (ch.spinTimer !== null && ch.spinTimer < 0) {
+          // Hug phase: pin the agent's x just left of the greeter so their sprites overlap.
+          const greeterHomeX = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+          ch.x = greeterHomeX - 10
+          ch.y = OfficeState.GREETER_ROW * TILE_SIZE + TILE_SIZE / 2
+        } else if (ch.spinTimer !== null && ch.spinTimer >= 0) {
+          // Spin phase: hold position on the pad center.
+          ch.x = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
+          ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
+        }
         updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
+        // After the SPAWNING update may have transitioned the agent to IDLE, snap back to the
+        // pad tile so pathfinding starts from a real walkable tile.
+        if (ch.state !== CharacterState.SPAWNING) {
+          ch.x = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
+          ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
+          ch.tileCol = OfficeState.PAD_COL
+          ch.tileRow = OfficeState.PAD_ROW
+        }
         continue
       }
 

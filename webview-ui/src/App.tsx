@@ -15,7 +15,6 @@ import { ZoomControls } from './components/ZoomControls.js'
 import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
 import { DeskLabels } from './components/DeskLabels.js'
-import { HighFiveOverlay } from './components/HighFiveOverlay.js'
 import { PermissionModal } from './components/PermissionModal.js'
 import { PendingQueue } from './components/PendingQueue.js'
 import { AgentFeed } from './components/AgentFeed.js'
@@ -316,13 +315,6 @@ function App() {
       })()}
 
       <DeskLabels
-        officeState={officeState}
-        containerRef={containerRef}
-        zoom={editor.zoom}
-        panRef={editor.panRef}
-      />
-
-      <HighFiveOverlay
         officeState={officeState}
         containerRef={containerRef}
         zoom={editor.zoom}
