@@ -251,6 +251,22 @@ export class OfficeState {
     if (folderName) {
       ch.folderName = folderName
     }
+
+    // Spawn from the pad: place the new character at the pad's tile (col 9, row 33),
+    // matrix-effect them in there, then let IDLE-state pathfinding walk them to their seat.
+    if (seatId) {
+      const padCol = 9
+      const padRow = 33
+      ch.tileCol = padCol
+      ch.tileRow = padRow
+      ch.x = padCol * TILE_SIZE + TILE_SIZE / 2
+      ch.y = padRow * TILE_SIZE + TILE_SIZE / 2
+      ch.path = []
+      ch.moveProgress = 0
+      ch.state = CharacterState.IDLE
+      // IDLE update will see isActive=true, pathfind to seat, transition to WALK.
+    }
+
     if (!skipSpawnEffect) {
       ch.matrixEffect = 'spawn'
       ch.matrixEffectTimer = 0

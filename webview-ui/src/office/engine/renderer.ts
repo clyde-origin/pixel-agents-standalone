@@ -484,6 +484,57 @@ export function renderBubbles(
   }
 }
 
+// ── Spawn pad ───────────────────────────────────────────────────
+
+const SPAWN_PAD_TILE_COL = 9.5
+const SPAWN_PAD_TILE_ROW = 33
+const SPAWN_PAD_RADIUS_TILES = 1.6  // pad covers ~3.2 tiles wide
+
+function renderSpawnPad(
+  ctx: CanvasRenderingContext2D,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  timeMs: number,
+) {
+  const cx = offsetX + SPAWN_PAD_TILE_COL * TILE_SIZE * zoom
+  const cy = offsetY + SPAWN_PAD_TILE_ROW * TILE_SIZE * zoom
+  const baseR = SPAWN_PAD_RADIUS_TILES * TILE_SIZE * zoom
+  // Slow pulse: 0.85 → 1.15 over ~2s
+  const pulse = 1 + 0.15 * Math.sin((timeMs / 1000) * Math.PI)
+  const r = baseR * pulse
+
+  ctx.save()
+  // Outer glow (soft cyan/violet halo)
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r)
+  grad.addColorStop(0,    'rgba(180, 230, 255, 0.85)')
+  grad.addColorStop(0.35, 'rgba(140, 180, 255, 0.45)')
+  grad.addColorStop(0.7,  'rgba(120, 110, 220, 0.20)')
+  grad.addColorStop(1,    'rgba(100,  80, 200, 0)')
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+
+  // Inner ring — sharp circle marking the pad's edge
+  ctx.strokeStyle = 'rgba(200, 235, 255, 0.7)'
+  ctx.lineWidth = Math.max(1, zoom * 0.8)
+  ctx.beginPath()
+  ctx.arc(cx, cy, baseR * 0.55, 0, Math.PI * 2)
+  ctx.stroke()
+
+  // Center hot-spot
+  const inner = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 0.35)
+  inner.addColorStop(0, 'rgba(255, 255, 255, 0.9)')
+  inner.addColorStop(1, 'rgba(255, 255, 255, 0)')
+  ctx.fillStyle = inner
+  ctx.beginPath()
+  ctx.arc(cx, cy, baseR * 0.35, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.restore()
+}
+
 // ── Active PC screen glow ───────────────────────────────────────
 
 /** Paint an animated screen on each active PC: hue-cycling background, randomized
@@ -674,6 +725,9 @@ export function renderFrame(
 
   // Draw tiles (floor + wall base color)
   renderTileGrid(ctx, tileMap, offsetX, offsetY, zoom, tileColors, layoutCols)
+
+  // Spawn pad — glowing circle on lounge floor where new agents emerge.
+  renderSpawnPad(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now())
 
   // Seat indicators (below furniture/characters, on top of floor)
   if (selection) {

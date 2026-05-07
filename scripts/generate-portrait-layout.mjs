@@ -102,8 +102,6 @@ add('lng-table-2', 'coffee_table', 5, 30)
 for (const [c, r] of [[4, 29], [6, 29], [4, 31], [6, 31]]) add(`lng-bag-2-${c}-${r}`, 'beanbag', c, r)
 add('lng-table-3', 'coffee_table', 14, 30)
 for (const [c, r] of [[13, 29], [15, 29], [13, 31], [15, 31]]) add(`lng-bag-3-${c}-${r}`, 'beanbag', c, r)
-add('lng-table-4', 'coffee_table', 9, 33)
-for (const [c, r] of [[8, 32], [10, 32], [8, 34], [10, 34]]) add(`lng-bag-4-${c}-${r}`, 'beanbag', c, r)
 // Lamps
 for (const [c, r] of [[3, 28], [16, 28], [3, 33], [16, 33]]) add(`lng-lamp-${c}-${r}`, 'lamp', c, r)
 // Lounge plants at corners
