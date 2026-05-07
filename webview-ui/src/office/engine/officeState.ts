@@ -55,6 +55,20 @@ export class OfficeState {
   private nextEffectId = 1
   /** Tile keys ("col,row") currently occupied by a character on a field trip (beanbag/bookshelf). */
   private occupiedTripTiles = new Set<string>()
+  /** Pending agents waiting for the pad to clear — drained one at a time in update(). */
+  private spawnQueue: Array<{
+    id: number
+    palette?: number
+    hueShift?: number
+    seatId?: string
+    folderName?: string
+  }> = []
+  /** Pending sessionId assignments for agents not yet materialized. */
+  private pendingSessionIds = new Map<number, string>()
+  /** Timestamp (ms, performance.now()) until which the pad is busy with a current spawn animation. */
+  private spawnInProgressUntil = 0
+  /** Whether the greeter NPC has been initialized. */
+  private greeterInitialized = false
 
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout()
@@ -63,6 +77,38 @@ export class OfficeState {
     this.blockedTiles = getBlockedTiles(this.layout.furniture)
     this.furniture = layoutToFurnitureInstances(this.layout.furniture)
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
+    this.ensureGreeter()
+  }
+
+  /** Sentinel id for the persistent greeter NPC at the pad. Far below subagent IDs (which start at -1 and decrement) so no collision. */
+  private static readonly GREETER_ID = -1000000
+  /** Total ms from matrix-spawn start to high-five completion (300 + 600 + 500 + small pad). */
+  private static readonly SPAWN_INTERVAL_MS = 1500
+  /** Pad tile location (must match SPAWN_PAD_TILE_COL/ROW in renderer.ts). */
+  private static readonly PAD_COL = 9
+  private static readonly PAD_ROW = 33
+  /** Greeter stands one tile to the right of the pad center. */
+  private static readonly GREETER_COL = 11
+  private static readonly GREETER_ROW = 33
+
+  /** Spawn the persistent greeter NPC if not yet placed. */
+  private ensureGreeter(): void {
+    if (this.greeterInitialized) return
+    this.greeterInitialized = true
+    const id = OfficeState.GREETER_ID
+    // Don't recreate if for some reason it's already present.
+    if (this.characters.has(id)) return
+    const ch = createCharacter(id, 4, null, null, 30)
+    ch.tileCol = OfficeState.GREETER_COL
+    ch.tileRow = OfficeState.GREETER_ROW
+    ch.x = OfficeState.GREETER_COL * TILE_SIZE + TILE_SIZE / 2
+    ch.y = OfficeState.GREETER_ROW * TILE_SIZE + TILE_SIZE / 2
+    ch.dir = Direction.LEFT // face the pad
+    ch.state = CharacterState.IDLE // standing pose; updateCharacter early-returns for greeter
+    ch.isGreeter = true
+    ch.isActive = false
+    ch.seatId = null
+    this.characters.set(id, ch)
   }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
@@ -95,6 +141,7 @@ export class OfficeState {
 
     // First pass: try to keep characters at their existing seats
     for (const ch of this.characters.values()) {
+      if (ch.isGreeter) continue // greeter never sits
       if (ch.seatId && this.seats.has(ch.seatId)) {
         const seat = this.seats.get(ch.seatId)!
         if (!seat.assigned) {
@@ -115,6 +162,7 @@ export class OfficeState {
 
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
+      if (ch.isGreeter) continue
       if (ch.seatId) continue
       const seatId = this.findFreeSeat()
       if (seatId) {
@@ -131,6 +179,7 @@ export class OfficeState {
 
     // Relocate any characters that ended up outside bounds or on non-walkable tiles
     for (const ch of this.characters.values()) {
+      if (ch.isGreeter) continue // greeter has fixed position
       if (ch.seatId) continue // seated characters are fine
       if (ch.tileCol < 0 || ch.tileCol >= layout.cols || ch.tileRow < 0 || ch.tileRow >= layout.rows) {
         this.relocateCharacterToWalkable(ch)
@@ -184,10 +233,11 @@ export class OfficeState {
    * repeat in balanced rounds with a random hue shift (≥45°).
    */
   private pickDiversePalette(): { palette: number; hueShift: number } {
-    // Count how many non-sub-agents use each base palette (0-5)
+    // Count how many non-sub-agents (excluding the greeter NPC) use each base palette (0-5)
     const counts = new Array(PALETTE_COUNT).fill(0) as number[]
     for (const ch of this.characters.values()) {
       if (ch.isSubagent) continue
+      if (ch.isGreeter) continue
       counts[ch.palette]++
     }
     const minCount = Math.min(...counts)
@@ -208,33 +258,86 @@ export class OfficeState {
   addAgent(id: number, preferredPalette?: number, preferredHueShift?: number, preferredSeatId?: string, skipSpawnEffect?: boolean, folderName?: string): void {
     if (this.characters.has(id)) return
 
+    // Fast-path: bootstrap restoration with skipSpawnEffect=true previously bypassed the matrix
+    // effect entirely. To keep the new "queued sequential spawn" UX, we treat skipSpawnEffect
+    // simply as a hint that's ignored here — every agent now goes through the pad with full
+    // matrix-spawn → spin → high-five, queued one at a time.
+    void skipSpawnEffect
+
+    // Reserve a seat NOW so concurrent addAgent / pickHomeSeatId calls don't double-assign.
+    let reservedSeatId: string | null = null
+    if (preferredSeatId && this.seats.has(preferredSeatId)) {
+      const seat = this.seats.get(preferredSeatId)!
+      if (!seat.assigned) {
+        seat.assigned = true
+        reservedSeatId = preferredSeatId
+      }
+    }
+    if (!reservedSeatId) {
+      const free = this.findFreeSeat()
+      if (free) {
+        this.seats.get(free)!.assigned = true
+        reservedSeatId = free
+      }
+    }
+
+    const args = {
+      id,
+      palette: preferredPalette,
+      hueShift: preferredHueShift,
+      seatId: reservedSeatId ?? undefined,
+      folderName,
+    }
+
+    const now = performance.now()
+    if (now < this.spawnInProgressUntil || this.spawnQueue.length > 0) {
+      // Pad is busy or queue has pending entries — defer.
+      this.spawnQueue.push(args)
+      return
+    }
+
+    this.materializeAgent(args)
+    this.spawnInProgressUntil = now + OfficeState.SPAWN_INTERVAL_MS
+  }
+
+  /** Real spawn body: resolves palette, picks seat, places at pad, kicks matrix-spawn effect. */
+  private materializeAgent(args: {
+    id: number
+    palette?: number
+    hueShift?: number
+    seatId?: string
+    folderName?: string
+  }): void {
+    const { id, folderName } = args
+    if (this.characters.has(id)) return
+
     let palette: number
     let hueShift: number
-    if (preferredPalette !== undefined) {
-      palette = preferredPalette
-      hueShift = preferredHueShift ?? 0
+    if (args.palette !== undefined) {
+      palette = args.palette
+      hueShift = args.hueShift ?? 0
     } else {
       const pick = this.pickDiversePalette()
       palette = pick.palette
       hueShift = pick.hueShift
     }
 
-    // Try preferred seat first, then any free seat
+    // Seat is pre-reserved by addAgent (so concurrent calls don't fight). It's already
+    // assigned=true. Use it directly. If somehow no seat was reserved, try a free one.
     let seatId: string | null = null
-    if (preferredSeatId && this.seats.has(preferredSeatId)) {
-      const seat = this.seats.get(preferredSeatId)!
-      if (!seat.assigned) {
-        seatId = preferredSeatId
+    if (args.seatId && this.seats.has(args.seatId)) {
+      seatId = args.seatId
+    } else {
+      const free = this.findFreeSeat()
+      if (free) {
+        this.seats.get(free)!.assigned = true
+        seatId = free
       }
-    }
-    if (!seatId) {
-      seatId = this.findFreeSeat()
     }
 
     let ch: Character
     if (seatId) {
       const seat = this.seats.get(seatId)!
-      seat.assigned = true
       ch = createCharacter(id, palette, seatId, seat, hueShift)
     } else {
       // No seats — spawn at random walkable tile
@@ -252,30 +355,56 @@ export class OfficeState {
       ch.folderName = folderName
     }
 
-    // Spawn from the pad: place the new character at the pad's tile (col 9, row 33),
-    // matrix-effect them in there, then let IDLE-state pathfinding walk them to their seat.
+    // Spawn from the pad: place the new character at the pad's tile, matrix-effect them in,
+    // then SPAWNING-state spin + high-five with the greeter, then IDLE pathfind to seat.
     if (seatId) {
-      const padCol = 9
-      const padRow = 33
-      ch.tileCol = padCol
-      ch.tileRow = padRow
-      ch.x = padCol * TILE_SIZE + TILE_SIZE / 2
-      ch.y = padRow * TILE_SIZE + TILE_SIZE / 2
+      ch.tileCol = OfficeState.PAD_COL
+      ch.tileRow = OfficeState.PAD_ROW
+      ch.x = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
+      ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
       ch.path = []
       ch.moveProgress = 0
-      ch.state = CharacterState.IDLE
-      // IDLE update will see isActive=true, pathfind to seat, transition to WALK.
+      // Hold in SPAWNING until matrix completes; then spin handler will run.
+      ch.state = CharacterState.SPAWNING
     }
 
-    if (!skipSpawnEffect) {
-      ch.matrixEffect = 'spawn'
-      ch.matrixEffectTimer = 0
-      ch.matrixEffectSeeds = matrixEffectSeeds()
-    }
+    ch.matrixEffect = 'spawn'
+    ch.matrixEffectTimer = 0
+    ch.matrixEffectSeeds = matrixEffectSeeds()
     this.characters.set(id, ch)
+
+    // Apply any sessionId queued before materialization.
+    const pendingSession = this.pendingSessionIds.get(id)
+    if (pendingSession !== undefined) {
+      ch.sessionId = pendingSession
+      this.pendingSessionIds.delete(id)
+    }
+  }
+
+  /** Assign a Claude Code sessionId to an agent. Works whether the agent is materialized
+   *  or still queued; the value will be applied when the queued agent appears. */
+  setAgentSessionId(id: number, sessionId: string): void {
+    const ch = this.characters.get(id)
+    if (ch) {
+      ch.sessionId = sessionId
+      return
+    }
+    this.pendingSessionIds.set(id, sessionId)
   }
 
   removeAgent(id: number): void {
+    // Remove from spawn queue if still queued (not yet materialized) and free its reserved seat.
+    const queueIdx = this.spawnQueue.findIndex((e) => e.id === id)
+    if (queueIdx >= 0) {
+      const entry = this.spawnQueue[queueIdx]
+      this.spawnQueue.splice(queueIdx, 1)
+      if (entry.seatId) {
+        const seat = this.seats.get(entry.seatId)
+        if (seat) seat.assigned = false
+      }
+      this.pendingSessionIds.delete(id)
+      return
+    }
     const ch = this.characters.get(id)
     if (!ch) return
     if (ch.matrixEffect === 'despawn') return // already despawning
@@ -849,6 +978,15 @@ export class OfficeState {
 
   update(dt: number): void {
     const now = performance.now() / 1000
+    const nowMs = performance.now()
+
+    // Drain spawn queue: when the pad is free and entries are pending, materialize the next.
+    while (this.spawnQueue.length > 0 && nowMs >= this.spawnInProgressUntil) {
+      const next = this.spawnQueue.shift()!
+      this.materializeAgent(next)
+      this.spawnInProgressUntil = nowMs + OfficeState.SPAWN_INTERVAL_MS
+    }
+
     const toDelete: number[] = []
     for (const ch of this.characters.values()) {
       // Handle matrix effect animation
@@ -856,16 +994,50 @@ export class OfficeState {
         ch.matrixEffectTimer += dt
         if (ch.matrixEffectTimer >= MATRIX_EFFECT_DURATION) {
           if (ch.matrixEffect === 'spawn') {
-            // Spawn complete — clear effect, resume normal FSM
+            // Spawn complete — clear matrix overlay.
             ch.matrixEffect = null
             ch.matrixEffectTimer = 0
             ch.matrixEffectSeeds = []
+            // If this was an agent spawn (SPAWNING state), kick off the spin animation.
+            if (ch.state === CharacterState.SPAWNING && !ch.isGreeter) {
+              ch.spinTimer = 0
+              ch.dir = Direction.DOWN
+              ch.frame = 0
+              ch.frameTimer = 0
+            }
           } else {
             // Despawn complete — mark for deletion
             toDelete.push(ch.id)
           }
         }
         continue // skip normal FSM while effect is active
+      }
+
+      // Greeter NPC: skip all wandering/trip/seat logic. Drive sprite + high-five mirror, then continue.
+      if (ch.isGreeter) {
+        // Detect a nearby spawning character in the high-five phase and sync facing+bubble.
+        let activeHighfivePartner: Character | null = null
+        for (const other of this.characters.values()) {
+          if (other.id === ch.id) continue
+          if (other.state === CharacterState.SPAWNING && other.spinTimer !== null && other.spinTimer < 0) {
+            activeHighfivePartner = other
+            break
+          }
+        }
+        if (activeHighfivePartner) {
+          ch.dir = Direction.LEFT // greeter faces the pad (LEFT from col 11 toward col 9)
+          ch.bubbleType = 'highfive'
+          ch.bubbleTimer = Math.max(0, -activeHighfivePartner.spinTimer)
+        }
+        // Drive idle frame timer + bubble decay through updateCharacter's greeter early-return.
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
+        continue
+      }
+
+      // SPAWNING agents: just tick the spin/high-five state machine and skip trip/wander logic.
+      if (ch.state === CharacterState.SPAWNING) {
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
+        continue
       }
 
       // Field-trip transitions: idle → beanbag, reading → bookshelf, thinking → pacing, else → home
@@ -944,6 +1116,8 @@ export class OfficeState {
     for (const ch of chars) {
       // Skip characters that are despawning
       if (ch.matrixEffect === 'despawn') continue
+      // Greeter NPC isn't a real agent — never selectable.
+      if (ch.isGreeter) continue
       // Character sprite is 16x24, anchored bottom-center
       // Apply sitting offset to match visual position
       const sittingOffset = (ch.state === CharacterState.TYPE && !ch.stretching) ? CHARACTER_SITTING_OFFSET_PX : 0

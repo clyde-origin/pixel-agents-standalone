@@ -37,14 +37,18 @@ for (let r = 4; r < LOUNGE_TOP; r++) {
 const furniture = []
 const add = (uid, type, col, row) => furniture.push({ uid, type, col, row })
 
-// Hero desk lowered into the violet carpet so the agent's overlay (project name + state)
-// has 3 rows of clear space above it before hitting the top wall.
+// Hero MERGE TO MAIN — wide horizontal desk with 2 chairs on each side facing inward.
+// Desk occupies cols 9-10, rows 3-4 (2×2). 4 chairs flanking it. 4 PCs on desk surface.
 const HERO_COL = 9
-add('hero-merge-chair-l', 'chair', HERO_COL,     3)
-add('hero-merge-chair-r', 'chair', HERO_COL + 1, 3)
-add('hero-merge-desk',    'desk',  HERO_COL,     4)
-add('hero-merge-pc-l',    'pc',    HERO_COL,     5)
-add('hero-merge-pc-r',    'pc',    HERO_COL + 1, 5)
+add('hero-merge-desk',     'desk',  HERO_COL,     3)            // 2x2 desk at (9,3)-(10,4)
+add('hero-merge-chair-l1', 'chair', HERO_COL - 1, 3)            // left side, top  → faces RIGHT (adj. desk at (9,3))
+add('hero-merge-chair-l2', 'chair', HERO_COL - 1, 4)            // left side, btm  → faces RIGHT (adj. desk at (9,4))
+add('hero-merge-chair-r1', 'chair', HERO_COL + 2, 3)            // right side, top → faces LEFT  (adj. desk at (10,3))
+add('hero-merge-chair-r2', 'chair', HERO_COL + 2, 4)            // right side, btm → faces LEFT  (adj. desk at (10,4))
+add('hero-merge-pc-tl',    'pc',    HERO_COL,     3)            // PC top-left
+add('hero-merge-pc-tr',    'pc',    HERO_COL + 1, 3)            // PC top-right
+add('hero-merge-pc-bl',    'pc',    HERO_COL,     4)            // PC btm-left
+add('hero-merge-pc-br',    'pc',    HERO_COL + 1, 4)            // PC btm-right
 
 function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
 

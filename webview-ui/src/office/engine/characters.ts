@@ -94,6 +94,7 @@ export function createCharacter(
     tripTile: null,
     originalSeatId: null,
     lastNoToolTime: null,
+    spinTimer: null,
   }
 }
 
@@ -106,6 +107,18 @@ export function updateCharacter(
   blockedTiles: Set<string>,
 ): void {
   ch.frameTimer += dt
+
+  // Greeter NPC: never wanders, never sits, never walks. Static idle pose.
+  // High-five bubble is driven externally by OfficeState.update() (mirrors the partner's timer).
+  if (ch.isGreeter) {
+    ch.frame = 0
+    if (ch.bubbleType === 'highfive' && ch.bubbleTimer <= 0) {
+      ch.bubbleType = null
+      ch.bubbleTimer = 0
+      ch.dir = Direction.LEFT
+    }
+    return
+  }
 
   // Decay intensity globally — applies in all states so it leaks back to 0.
   if (ch.intensity > 0) {
@@ -333,6 +346,53 @@ export function updateCharacter(
       }
       break
     }
+
+    case CharacterState.SPAWNING: {
+      // Spawn arrival sequence: spin (0..600ms positive) → highfive (0..-500ms negative) → IDLE.
+      if (ch.spinTimer === null) {
+        // Defensive: should not happen; transition out.
+        ch.state = CharacterState.IDLE
+        ch.frame = 0
+        ch.frameTimer = 0
+        break
+      }
+      if (ch.spinTimer >= 0) {
+        // Spin phase: cycle DOWN → RIGHT → UP → LEFT every 150ms over 600ms total.
+        const SPIN_DURATION_MS = 600
+        const SPIN_FRAME_MS = 150
+        const phase = Math.floor(ch.spinTimer / SPIN_FRAME_MS) % 4
+        const dirs = [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT]
+        ch.dir = dirs[phase]
+        ch.spinTimer += dt * 1000
+        if (ch.spinTimer >= SPIN_DURATION_MS) {
+          // Begin high-five phase: face the greeter (RIGHT, since greeter is at col 11 east of pad col 9).
+          ch.spinTimer = -500
+          ch.dir = Direction.RIGHT
+          ch.bubbleType = 'highfive'
+          ch.bubbleTimer = 500
+        }
+      } else {
+        // High-five phase: spinTimer is negative milliseconds remaining, ticks toward 0.
+        ch.spinTimer += dt * 1000
+        // Bubble timer mirrors the negative timer.
+        if (ch.bubbleType === 'highfive') {
+          ch.bubbleTimer = Math.max(0, -ch.spinTimer)
+        }
+        if (ch.spinTimer >= 0) {
+          // Done: clear spawn phase, transition to IDLE so pathfind kicks in.
+          ch.spinTimer = null
+          ch.dir = Direction.DOWN
+          if (ch.bubbleType === 'highfive') {
+            ch.bubbleType = null
+            ch.bubbleTimer = 0
+          }
+          ch.state = CharacterState.IDLE
+          ch.frame = 0
+          ch.frameTimer = 0
+        }
+      }
+      break
+    }
   }
 }
 
@@ -351,6 +411,9 @@ export function getCharacterSprite(ch: Character, sprites: CharacterSprites): Sp
     case CharacterState.WALK:
       return sprites.walk[ch.dir][ch.frame % 4]
     case CharacterState.IDLE:
+      return sprites.walk[ch.dir][1]
+    case CharacterState.SPAWNING:
+      // Standing pose facing current direction.
       return sprites.walk[ch.dir][1]
     default:
       return sprites.walk[ch.dir][1]

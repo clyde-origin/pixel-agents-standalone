@@ -371,6 +371,30 @@ export const BUBBLE_WAITING_SPRITE: SpriteData = (() => {
   ]
 })()
 
+/** High-five bubble: stylized yellow raised-hand glyph on a white bubble (11x13).
+ *  Drawn manually because pixel canvas doesn't render emoji reliably. */
+export const BUBBLE_HIGHFIVE_SPRITE: SpriteData = (() => {
+  const B = '#555566' // border
+  const F = '#EEEEFF' // bubble fill
+  const Y = '#FFD24A' // bright yellow palm
+  const D = '#B8780C' // hand outline
+  return [
+    [_, B, B, B, B, B, B, B, B, B, _],
+    [B, F, F, F, D, D, D, D, F, F, B],
+    [B, F, F, D, Y, Y, Y, Y, D, F, B],
+    [B, F, D, Y, Y, Y, Y, Y, Y, D, B],
+    [B, F, D, Y, Y, Y, Y, Y, Y, D, B],
+    [B, D, Y, Y, Y, Y, Y, Y, Y, D, B],
+    [B, D, Y, Y, Y, Y, Y, Y, Y, D, B],
+    [B, F, D, Y, Y, Y, Y, Y, Y, D, B],
+    [B, F, F, D, D, D, D, D, D, F, B],
+    [_, B, B, B, B, B, B, B, B, B, _],
+    [_, _, _, _, B, B, B, _, _, _, _],
+    [_, _, _, _, _, B, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
 // ── Character Sprites ───────────────────────────────────────────
 // 16x24 characters with palette substitution
 

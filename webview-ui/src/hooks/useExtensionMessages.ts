@@ -152,6 +152,7 @@ function saveAgentSeats(os: OfficeState): void {
   const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {}
   for (const ch of os.characters.values()) {
     if (ch.isSubagent) continue
+    if (ch.isGreeter) continue
     seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId }
   }
   vscode.postMessage({ type: 'saveAgentSeats', seats })
@@ -222,8 +223,7 @@ export function useExtensionMessages(
           }
           os.addAgent(p.id, p.palette, p.hueShift, seatId, true, p.folderName)
           if (p.sessionId) {
-            const ch = os.characters.get(p.id)
-            if (ch) ch.sessionId = p.sessionId
+            os.setAgentSessionId(p.id, p.sessionId)
           }
         }
         if (assignments !== homeDeskAssignmentsRef.current) {
@@ -248,8 +248,7 @@ export function useExtensionMessages(
         os.addAgent(id, undefined, undefined, seatId ?? undefined, undefined, folderName)
         const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : undefined
         if (sessionId) {
-          const ch = os.characters.get(id)
-          if (ch) ch.sessionId = sessionId
+          os.setAgentSessionId(id, sessionId)
         }
         saveAgentSeats(os)
       } else if (msg.type === 'agentClosed') {

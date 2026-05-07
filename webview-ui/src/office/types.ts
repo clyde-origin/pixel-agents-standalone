@@ -38,6 +38,8 @@ export const CharacterState = {
   IDLE: 'idle',
   WALK: 'walk',
   TYPE: 'type',
+  /** Newly-spawned agent doing spin / high-five at the pad before pathfinding to seat. */
+  SPAWNING: 'spawning',
 } as const
 export type CharacterState = (typeof CharacterState)[keyof typeof CharacterState]
 
@@ -180,8 +182,8 @@ export interface Character {
   /** Assigned seat uid, or null if no seat */
   seatId: string | null
   /** Active speech bubble type, or null if none showing */
-  bubbleType: 'permission' | 'waiting' | null
-  /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
+  bubbleType: 'permission' | 'waiting' | 'highfive' | null
+  /** Countdown timer for bubble (waiting: 2→0, permission: unused, highfive: ms remaining) */
   bubbleTimer: number
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number
@@ -219,6 +221,14 @@ export interface Character {
   /** Time (in seconds, performance.now()/1000) since the agent last had any active tool.
    *  Null while a tool is running. Used to detect long "thinking" gaps. */
   lastNoToolTime: number | null
+  /** Spawn-arrival animation timer.
+   *  - null              → not in spawn arrival phase
+   *  - 0..600 (ms)       → spinning through 4 facing directions
+   *  - -1..-500 (negative ms remaining) → high-fiving the greeter
+   *  When it reaches 0 from negative, transition to IDLE so pathfind kicks in. */
+  spinTimer: number | null
+  /** True for the persistent greeter NPC at the pad — excluded from agent counts and most update logic. */
+  isGreeter?: boolean
 }
 
 export interface ToolEffect {
