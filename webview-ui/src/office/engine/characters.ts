@@ -367,10 +367,10 @@ export function updateCharacter(
         ch.spinTimer += dt * 1000
         if (ch.spinTimer >= SPIN_DURATION_MS) {
           // Begin high-five phase: face the greeter (RIGHT, since greeter is at col 11 east of pad col 9).
-          ch.spinTimer = -500
+          ch.spinTimer = -1500
           ch.dir = Direction.RIGHT
           ch.bubbleType = 'highfive'
-          ch.bubbleTimer = 500
+          ch.bubbleTimer = 1500
         }
       } else {
         // High-five phase: spinTimer is negative milliseconds remaining, ticks toward 0.

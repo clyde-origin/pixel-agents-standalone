@@ -83,7 +83,7 @@ export class OfficeState {
   /** Sentinel id for the persistent greeter NPC at the pad. Far below subagent IDs (which start at -1 and decrement) so no collision. */
   private static readonly GREETER_ID = -1000000
   /** Total ms from matrix-spawn start to high-five completion (300 + 600 + 500 + small pad). */
-  private static readonly SPAWN_INTERVAL_MS = 1500
+  private static readonly SPAWN_INTERVAL_MS = 3000
   /** Pad tile location (must match SPAWN_PAD_TILE_COL/ROW in renderer.ts). */
   private static readonly PAD_COL = 9
   private static readonly PAD_ROW = 33
