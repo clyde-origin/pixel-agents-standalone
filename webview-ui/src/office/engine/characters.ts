@@ -218,7 +218,7 @@ export function updateCharacter(
         ch.tileCol === ch.tripTile.col &&
         ch.tileRow === ch.tripTile.row
       ) {
-        ch.dir = ch.tileCol === 8 ? Direction.RIGHT : Direction.LEFT
+        ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
         break
       }
       // Countdown wander timer
@@ -319,7 +319,7 @@ export function updateCharacter(
             ch.tileCol === ch.tripTile.col &&
             ch.tileRow === ch.tripTile.row
           ) {
-            ch.dir = ch.tileCol === 8 ? Direction.RIGHT : Direction.LEFT
+            ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
           }
           ch.state = CharacterState.IDLE
           ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC)

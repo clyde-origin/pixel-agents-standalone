@@ -903,10 +903,10 @@ export class OfficeState {
     return best
   }
 
-  /** The two ping-pong player tiles, flanking the lounge ping-pong table at cols 9-11, row 28. */
+  /** The two ping-pong player tiles, flanking the lounge ping-pong table at cols 13-15, row 25. */
   private static readonly PING_PONG_SLOTS: Array<{ col: number; row: number }> = [
-    { col: 8, row: 28 },   // LEFT player (faces RIGHT toward the table)
-    { col: 12, row: 28 },  // RIGHT player (faces LEFT toward the table)
+    { col: 12, row: 25 },  // LEFT player (faces RIGHT toward the table)
+    { col: 16, row: 25 },  // RIGHT player (faces LEFT toward the table)
   ]
 
   /** Pick the closest free ping-pong slot for the given character, or null if both are taken. */

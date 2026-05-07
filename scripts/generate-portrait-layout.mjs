@@ -108,8 +108,9 @@ add('lng-table-3', 'coffee_table', 14, 30)
 for (const [c, r] of [[13, 29], [15, 29], [13, 31], [15, 31]]) add(`lng-bag-3-${c}-${r}`, 'beanbag', c, r)
 // Lamps
 for (const [c, r] of [[3, 28], [16, 28], [3, 33], [16, 33]]) add(`lng-lamp-${c}-${r}`, 'lamp', c, r)
-// Ping pong table — sits between the row-28 lamps so two idle agents can pair up.
-add('lng-ping-pong', 'ping_pong_table', 9, 28)
+// Ping pong table — upper-right corner of the lounge with breathing room around it.
+// Table spans cols 13-15 row 25; players stand at (12, 25) and (16, 25).
+add('lng-ping-pong', 'ping_pong_table', 13, 25)
 // Lounge plants at corners
 add('lng-plant-1', 'plant', 1, 24)
 add('lng-plant-2', 'plant', 18, 24)

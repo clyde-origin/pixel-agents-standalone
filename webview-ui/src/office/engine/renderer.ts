@@ -605,8 +605,8 @@ export function renderActivePCScreens(
 // ── Ping-pong ball ──────────────────────────────────────────────
 
 /** Tile coords of the two ping-pong player slots (must match OfficeState.PING_PONG_SLOTS). */
-const PING_PONG_LEFT_TILE = { col: 8, row: 28 }
-const PING_PONG_RIGHT_TILE = { col: 12, row: 28 }
+const PING_PONG_LEFT_TILE = { col: 12, row: 25 }
+const PING_PONG_RIGHT_TILE = { col: 16, row: 25 }
 
 /**
  * Draws a small white ball bouncing between two ping-pong players.
@@ -634,10 +634,10 @@ export function renderPingPongBall(
   if (!leftPlayer || !rightPlayer) return
 
   // Ball travels between the table edges in tile space.
-  // Left edge of table (col 9) → right edge (col 11). Use tile centers near the table top.
-  const tableY = 28 * TILE_SIZE + TILE_SIZE * 0.35 // a bit above the table center line
-  const leftX = 9 * TILE_SIZE + 1
-  const rightX = 11 * TILE_SIZE + TILE_SIZE - 2
+  // Table at cols 13-15, row 25. Ball arcs across the table top.
+  const tableY = 25 * TILE_SIZE + TILE_SIZE * 0.35
+  const leftX = 13 * TILE_SIZE + 1
+  const rightX = 15 * TILE_SIZE + TILE_SIZE - 2
 
   // 2 Hz back-and-forth: phase ∈ [0,1) over 0.5s. Use a triangle wave for ball x.
   const cycleSec = 0.5
