@@ -373,6 +373,186 @@ export const PING_PONG_TABLE_SPRITE: SpriteData = (() => {
   ]
 })()
 
+/** Chess set: 48x24 (3 tiles wide × 1.5 tile tall visual; 3×1 footprint).
+ *  Two tall ornate high-back chairs flank a checkered chess table with pieces.
+ *  Chair backs extend upward into the row above the footprint (like bookshelf 1×2). */
+export const CHESS_SET_SPRITE: SpriteData = (() => {
+  const W = '#5a3a1c' // dark wood (chair back, table)
+  const M = '#8a5a2c' // medium wood (seat cushion, table top edge)
+  const D = '#3a2410' // very dark wood (chair shadow, dark squares)
+  const G = '#d4af37' // gold trim
+  const L = '#f0e0c0' // light squares
+  const B = '#1a1a1a' // black chess pieces
+  const P = '#f0f0f0' // white chess pieces
+  // 24 rows tall, 48 cols wide.
+  // Rows 0-15: chair backs (tall, ornate). Table top sits in middle.
+  // Rows 16-23: footprint row visual — chair seats, table base.
+  const rows: string[][] = []
+  for (let r = 0; r < 24; r++) rows.push(new Array(48).fill(_))
+
+  // ── LEFT CHAIR (cols 4-13, facing RIGHT) ──
+  // Ornate pointed/curved top + tall back panel + seat.
+  // Top spire (cols 7-9 row 1)
+  rows[1][7] = G; rows[1][8] = G; rows[1][9] = G
+  // Crown row (cols 6-10 row 2) — gold trim across top of back
+  rows[2][6] = G; rows[2][7] = G; rows[2][8] = G; rows[2][9] = G; rows[2][10] = G
+  // Back panel (rows 3-15, cols 5-12) — dark wood with shadow on right (away from facing direction)
+  for (let r = 3; r < 16; r++) {
+    rows[r][5] = D
+    rows[r][6] = W
+    rows[r][7] = W
+    rows[r][8] = W
+    rows[r][9] = W
+    rows[r][10] = W
+    rows[r][11] = W
+    rows[r][12] = D
+  }
+  // Decorative inset on back (rows 5-12 cols 7-10 lighter)
+  for (let r = 5; r < 13; r++) {
+    rows[r][7] = M
+    rows[r][10] = M
+  }
+  // Gold pommel at center of back (rows 7-9, col 8-9)
+  rows[7][8] = G; rows[7][9] = G
+  rows[8][8] = G; rows[8][9] = G
+  // Seat (rows 16-21 cols 4-13)
+  for (let r = 16; r < 22; r++) {
+    rows[r][4] = D
+    rows[r][13] = D
+    for (let c = 5; c < 13; c++) rows[r][c] = M
+  }
+  // Seat cushion top highlight
+  for (let c = 5; c < 13; c++) rows[16][c] = G  // gold trim along top of seat
+  // Seat front edge shadow
+  for (let c = 5; c < 13; c++) rows[21][c] = D
+  // Legs (rows 22-23)
+  rows[22][5] = D; rows[22][6] = D; rows[22][11] = D; rows[22][12] = D
+  rows[23][5] = D; rows[23][6] = D; rows[23][11] = D; rows[23][12] = D
+
+  // ── RIGHT CHAIR (cols 34-43, facing LEFT, mirror of left chair) ──
+  // Top spire
+  rows[1][38] = G; rows[1][39] = G; rows[1][40] = G
+  // Crown
+  rows[2][37] = G; rows[2][38] = G; rows[2][39] = G; rows[2][40] = G; rows[2][41] = G
+  // Back panel
+  for (let r = 3; r < 16; r++) {
+    rows[r][35] = D
+    rows[r][36] = W
+    rows[r][37] = W
+    rows[r][38] = W
+    rows[r][39] = W
+    rows[r][40] = W
+    rows[r][41] = W
+    rows[r][42] = D
+  }
+  // Decorative inset (mirrored)
+  for (let r = 5; r < 13; r++) {
+    rows[r][37] = M
+    rows[r][40] = M
+  }
+  // Gold pommel
+  rows[7][38] = G; rows[7][39] = G
+  rows[8][38] = G; rows[8][39] = G
+  // Seat
+  for (let r = 16; r < 22; r++) {
+    rows[r][34] = D
+    rows[r][43] = D
+    for (let c = 35; c < 43; c++) rows[r][c] = M
+  }
+  for (let c = 35; c < 43; c++) rows[16][c] = G
+  for (let c = 35; c < 43; c++) rows[21][c] = D
+  // Legs
+  rows[22][35] = D; rows[22][36] = D; rows[22][41] = D; rows[22][42] = D
+  rows[23][35] = D; rows[23][36] = D; rows[23][41] = D; rows[23][42] = D
+
+  // ── CHESS TABLE (cols 16-31, between chairs) ──
+  // Table top with checkered surface in rows 10-17.
+  // Outer dark-wood frame
+  for (let r = 9; r < 18; r++) {
+    rows[r][16] = D
+    rows[r][31] = D
+  }
+  for (let c = 16; c < 32; c++) {
+    rows[9][c] = D
+    rows[17][c] = D
+  }
+  // Wood top inside frame at rows 10-11 (top edge before board)
+  for (let c = 17; c < 31; c++) {
+    rows[10][c] = W
+    rows[11][c] = M
+  }
+  // Checkered 4×4 board: each square 2×2 px, board occupies rows 12-15 cols 19-26 (8×4 px)
+  // Wait — make it 4×4 squares of 2×2 = 8×8 px, centered in cols 19-26 rows 10-17.
+  // Re-layout: clean checkered 4×4 at rows 11-18 ... but we already filled rows 10-11.
+  // Simpler approach: place 4×4 board at rows 12-15 (4 rows × 2 cells of 2px = 8 cells, but need 4 cells = 8 rows)
+  // Use 1px-per-square board (4×4 squares) at rows 12-15 cols 22-25 — too small.
+  // Use 2px-per-square at rows 11-14 (4 rows? no need 8 rows for 4 squares of 2px).
+  // Reset: place 8×8 px board at rows 11-18, cols 20-27. That gives 4×4 squares of 2×2 px.
+  // Clear those rows first.
+  for (let r = 11; r < 19; r++) {
+    for (let c = 20; c < 28; c++) rows[r][c] = ''
+  }
+  // Now fill the rest of the table top wood around the board (rows 10-18, cols 17-30 minus board area)
+  for (let r = 10; r < 19; r++) {
+    for (let c = 17; c < 31; c++) {
+      const onBoard = r >= 11 && r < 19 && c >= 20 && c < 28
+      if (!onBoard) {
+        if (r === 10) rows[r][c] = W
+        else if (r === 18) rows[r][c] = D
+        else rows[r][c] = M
+      }
+    }
+  }
+  // Draw checkered board: 4×4 squares, each 2×2 px, rows 11-18 cols 20-27.
+  for (let sr = 0; sr < 4; sr++) {
+    for (let sc = 0; sc < 4; sc++) {
+      const isLight = (sr + sc) % 2 === 0
+      const fill = isLight ? L : D
+      const r0 = 11 + sr * 2
+      const c0 = 20 + sc * 2
+      rows[r0][c0] = fill
+      rows[r0][c0 + 1] = fill
+      rows[r0 + 1][c0] = fill
+      rows[r0 + 1][c0 + 1] = fill
+    }
+  }
+  // Chess pieces — 2×2 dots on alternating squares.
+  // White on bottom two rows of board (sr=2,3), black on top two rows (sr=0,1).
+  // Place a piece on every other square for variety.
+  // Black pieces (top of board, sr=0, sc=0 and sc=2)
+  rows[11][20] = B; rows[11][21] = B
+  rows[12][20] = B; rows[12][21] = B
+  rows[11][24] = B; rows[11][25] = B
+  rows[12][24] = B; rows[12][25] = B
+  // Black on row sr=1 (sc=1, sc=3)
+  rows[13][22] = B; rows[13][23] = B
+  rows[14][22] = B; rows[14][23] = B
+  rows[13][26] = B; rows[13][27] = B
+  rows[14][26] = B; rows[14][27] = B
+  // White pieces (bottom of board, sr=2, sc=0 and sc=2)
+  rows[15][20] = P; rows[15][21] = P
+  rows[16][20] = P; rows[16][21] = P
+  rows[15][24] = P; rows[15][25] = P
+  rows[16][24] = P; rows[16][25] = P
+  // White on sr=3 (sc=1, sc=3)
+  rows[17][22] = P; rows[17][23] = P
+  rows[18][22] = P; rows[18][23] = P
+  rows[17][26] = P; rows[17][27] = P
+  rows[18][26] = P; rows[18][27] = P
+
+  // Table base/legs (rows 19-23, cols 18-29)
+  for (let r = 19; r < 22; r++) {
+    rows[r][18] = D
+    rows[r][29] = D
+    for (let c = 19; c < 29; c++) rows[r][c] = W
+  }
+  // Pedestal legs at corners
+  rows[22][18] = D; rows[22][19] = D; rows[22][28] = D; rows[22][29] = D
+  rows[23][18] = D; rows[23][19] = D; rows[23][28] = D; rows[23][29] = D
+
+  return rows
+})()
+
 // ── Speech Bubble Sprites ───────────────────────────────────────
 
 /** Permission bubble: bright orange "!" badge demanding attention (11x13) */

@@ -921,11 +921,37 @@ export class OfficeState {
     { col: 16, row: 25 },  // RIGHT player (faces LEFT toward the table)
   ]
 
+  /** The two chess player tiles, flanking the lounge chess set at cols 3-5, row 25. */
+  private static readonly CHESS_SLOTS: Array<{ col: number; row: number }> = [
+    { col: 2, row: 25 },  // LEFT player (faces RIGHT toward the table)
+    { col: 6, row: 25 },  // RIGHT player (faces LEFT toward the table)
+  ]
+
   /** Pick the closest free ping-pong slot for the given character, or null if both are taken. */
   private findFreePingPongSlot(ch: Character): { col: number; row: number } | null {
     let best: { col: number; row: number } | null = null
     let bestDist = Infinity
     for (const s of OfficeState.PING_PONG_SLOTS) {
+      const key = `${s.col},${s.row}`
+      const isMyOwnSlot = ch.tripTile && ch.tripTile.col === s.col && ch.tripTile.row === s.row
+      if (this.occupiedTripTiles.has(key) && !isMyOwnSlot) continue
+      const tile = this.tileMap[s.row]?.[s.col]
+      if (tile === undefined) continue
+      if (this.blockedTiles.has(key) && !isMyOwnSlot) continue
+      const dist = Math.abs(s.col - ch.tileCol) + Math.abs(s.row - ch.tileRow)
+      if (dist < bestDist) {
+        best = s
+        bestDist = dist
+      }
+    }
+    return best
+  }
+
+  /** Pick the closest free chess slot for the given character, or null if both are taken. */
+  private findFreeChessSlot(ch: Character): { col: number; row: number } | null {
+    let best: { col: number; row: number } | null = null
+    let bestDist = Infinity
+    for (const s of OfficeState.CHESS_SLOTS) {
       const key = `${s.col},${s.row}`
       const isMyOwnSlot = ch.tripTile && ch.tripTile.col === s.col && ch.tripTile.row === s.row
       if (this.occupiedTripTiles.has(key) && !isMyOwnSlot) continue
@@ -956,13 +982,27 @@ export class OfficeState {
     return false
   }
 
+  /** True when this idle agent has a partner available and at least one chess slot is free. */
+  private canStartChess(ch: Character): boolean {
+    const slot = this.findFreeChessSlot(ch)
+    if (!slot) return false
+    for (const other of this.characters.values()) {
+      if (other.id === ch.id) continue
+      if (other.isGreeter) continue
+      if (!other.isActive) return true
+    }
+    return false
+  }
+
   /** Begin walking the agent toward a trip target. Returns true if a path was found. */
-  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong'): boolean {
+  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess'): boolean {
     let target: { col: number; row: number } | null
     if (type === 'pacing') {
       target = this.pickPacingTile(ch.tileCol, ch.tileRow)
     } else if (type === 'ping_pong') {
       target = this.findFreePingPongSlot(ch)
+    } else if (type === 'chess') {
+      target = this.findFreeChessSlot(ch)
     } else {
       target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
     }
@@ -1047,14 +1087,19 @@ export class OfficeState {
   }
 
   /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | null {
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | null {
     if (!ch.isActive) {
+      // Already at a chess slot? Stay there as long as a partner exists, otherwise drift away.
+      if (ch.tripMode === 'chess') {
+        return this.hasIdlePartner(ch) ? 'chess' : 'beanbag'
+      }
       // Already at a ping-pong slot? Stay there as long as a partner exists, otherwise drift away.
       if (ch.tripMode === 'ping_pong') {
         return this.hasIdlePartner(ch) ? 'ping_pong' : 'beanbag'
       }
-      // Prefer ping-pong if a partner is already idle (or playing); otherwise beanbag.
+      // Prefer ping-pong first (existing behavior), then chess, then beanbag.
       if (this.canStartPingPong(ch)) return 'ping_pong'
+      if (this.canStartChess(ch)) return 'chess'
       return 'beanbag'
     }
     if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) return 'bookshelf'

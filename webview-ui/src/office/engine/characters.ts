@@ -210,15 +210,21 @@ export function updateCharacter(
         }
         break
       }
-      // Ping-pong: stay parked at the slot, facing the table — the trip system
+      // Ping-pong / chess: stay parked at the slot, facing the table — the trip system
       // is in charge of when to leave (e.g., partner left, agent became active).
       if (
-        ch.tripMode === 'ping_pong' &&
+        (ch.tripMode === 'ping_pong' || ch.tripMode === 'chess') &&
         ch.tripTile &&
         ch.tileCol === ch.tripTile.col &&
         ch.tileRow === ch.tripTile.row
       ) {
-        ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
+        // Ping-pong: tileCol 12 = LEFT player → RIGHT facing; 16 = RIGHT player → LEFT facing
+        // Chess:     tileCol 2  = LEFT player → RIGHT facing; 6  = RIGHT player → LEFT facing
+        if (ch.tripMode === 'ping_pong') {
+          ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
+        } else {
+          ch.dir = ch.tileCol === 2 ? Direction.RIGHT : Direction.LEFT
+        }
         break
       }
       // Countdown wander timer
@@ -312,14 +318,18 @@ export function updateCharacter(
               break
             }
           }
-          // Ping-pong arrival: face toward the table center across from us.
+          // Ping-pong / chess arrival: face toward the table center across from us.
           if (
-            ch.tripMode === 'ping_pong' &&
+            (ch.tripMode === 'ping_pong' || ch.tripMode === 'chess') &&
             ch.tripTile &&
             ch.tileCol === ch.tripTile.col &&
             ch.tileRow === ch.tripTile.row
           ) {
-            ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
+            if (ch.tripMode === 'ping_pong') {
+              ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
+            } else {
+              ch.dir = ch.tileCol === 2 ? Direction.RIGHT : Direction.LEFT
+            }
           }
           ch.state = CharacterState.IDLE
           ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC)
