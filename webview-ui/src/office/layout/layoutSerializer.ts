@@ -70,9 +70,11 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
         }
       }
       if (onDesk) {
-        // Lift surface items 20 px so the monitor screen sits above the cluster label
-        // (which lives on the lower portion of the desk surface).
-        renderY -= 20
+        // Lift surface items so the monitor screen sits above the cluster label
+        // (which lives on the lower portion of the desk surface). Hero MERGE TO MAIN
+        // PCs use a smaller lift so they sit visually flush ON the desk wood.
+        const lift = item.uid?.startsWith('hero-merge-pc-') ? 8 : 20
+        renderY -= lift
       }
     }
 

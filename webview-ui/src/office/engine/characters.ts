@@ -4,6 +4,7 @@ import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../ty
 /** Probability that an idle wander step will target a lounge tile (FLOOR_2) when any exist. */
 const LOUNGE_BIAS_PROBABILITY = 0.75
 import type { CharacterSprites } from '../sprites/spriteData.js'
+import { getGreeterSprite } from '../sprites/spriteData.js'
 import { findPath } from '../layout/tileMap.js'
 import {
   WALK_SPEED_PX_PER_SEC,
@@ -398,6 +399,10 @@ export function updateCharacter(
 
 /** Get the correct sprite frame for a character's current state and direction */
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
+  // Goddess greeter renders with a dedicated sprite set (long hair + white robe).
+  if (ch.isGreeter) {
+    return getGreeterSprite(ch.dir)
+  }
   switch (ch.state) {
     case CharacterState.TYPE:
       // Stretch: brief stand-up gesture while still in TYPE state

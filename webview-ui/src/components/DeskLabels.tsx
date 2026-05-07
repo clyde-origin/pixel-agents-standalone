@@ -21,24 +21,26 @@ interface ClusterDef {
 }
 
 const CLUSTERS: ClusterDef[] = [
-  // Hero MERGE TO MAIN — lowered into the carpet: chair row 3, desk row 4, pc row 5 → label on 5.
+  // Hero MERGE TO MAIN — desk rows 3-4, bottom-of-desk = top of row 5 → labelRow 5.
   { centerCol: 10, labelRow: 5, title: 'MERGE TO MAIN', tone: 'green' },
 
-  // 12 stations: pod rows start at chair row 6, each pod is 3 rows tall.
-  // labelRow = chair_row + 1 (top desk row, above monitor area).
+  // 12 stations: chair row N, desk-top row N+1, desk-bottom/PC row N+2.
+  // labelRow = chair_row + 3 = top of the row just below the desk's bottom row,
+  // i.e. the world-y of the desk's bottom edge. With translate(-50%, -100%) the
+  // label's BOTTOM aligns with that edge, so it never covers the monitor.
   // Left column center = col 4, right column center = col 16.
-  { centerCol: 4,  labelRow: 7,  title: 'BUILD',           tone: 'cool' },
-  { centerCol: 16, labelRow: 7,  title: 'REFACTOR',        tone: 'amber' },
-  { centerCol: 4,  labelRow: 10, title: 'BUILDS & TESTS',  tone: 'warm' },
-  { centerCol: 16, labelRow: 10, title: 'GIT & PRS',       tone: 'pink' },
-  { centerCol: 4,  labelRow: 13, title: 'TEST',            tone: 'teal' },
-  { centerCol: 16, labelRow: 13, title: 'SHIP',            tone: 'green' },
-  { centerCol: 4,  labelRow: 16, title: 'REVIEW',          tone: 'pink' },
-  { centerCol: 16, labelRow: 16, title: 'EXPLORE',         tone: 'violet' },
-  { centerCol: 4,  labelRow: 19, title: 'DEBUG',           tone: 'violet' },
-  { centerCol: 16, labelRow: 19, title: 'DEPLOY',          tone: 'green' },
-  { centerCol: 4,  labelRow: 22, title: 'DOCS',            tone: 'cool' },
-  { centerCol: 16, labelRow: 22, title: 'REVIEW & DOCS',   tone: 'amber' },
+  { centerCol: 4,  labelRow: 9,  title: 'BUILD',           tone: 'cool' },
+  { centerCol: 16, labelRow: 9,  title: 'REFACTOR',        tone: 'amber' },
+  { centerCol: 4,  labelRow: 12, title: 'BUILDS & TESTS',  tone: 'warm' },
+  { centerCol: 16, labelRow: 12, title: 'GIT & PRS',       tone: 'pink' },
+  { centerCol: 4,  labelRow: 15, title: 'TEST',            tone: 'teal' },
+  { centerCol: 16, labelRow: 15, title: 'SHIP',            tone: 'green' },
+  { centerCol: 4,  labelRow: 18, title: 'REVIEW',          tone: 'pink' },
+  { centerCol: 16, labelRow: 18, title: 'EXPLORE',         tone: 'violet' },
+  { centerCol: 4,  labelRow: 21, title: 'DEBUG',           tone: 'violet' },
+  { centerCol: 16, labelRow: 21, title: 'DEPLOY',          tone: 'green' },
+  { centerCol: 4,  labelRow: 24, title: 'DOCS',            tone: 'cool' },
+  { centerCol: 16, labelRow: 24, title: 'REVIEW & DOCS',   tone: 'amber' },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
@@ -89,8 +91,9 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
       {CLUSTERS.map((c, i) => {
         // Center the label on the paired-desk pod's seam (centerCol = pod.col + 2).
         const wx = c.centerCol * TILE_SIZE
-        // Anchor at the TOP of the bottom desk row so the label sits on the desk surface,
-        // slightly above the monitor screen so it doesn't cover anything important.
+        // Anchor at the world-y of the desk's bottom edge (labelRow * TILE_SIZE).
+        // The transform places the label's BOTTOM at that anchor so the label sits
+        // ABOVE the desk's bottom edge — never covering the monitor screen.
         const wy = c.labelRow * TILE_SIZE
         const screenX = (deviceOffsetX + wx * zoom) / dpr
         const screenY = (deviceOffsetY + wy * zoom) / dpr
@@ -101,7 +104,7 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
               position: 'absolute',
               left: screenX,
               top: screenY,
-              transform: 'translate(-50%, -50%)',
+              transform: 'translate(-50%, -100%)',
               pointerEvents: 'none',
               zIndex: 30,
             }}

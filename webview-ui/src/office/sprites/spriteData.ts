@@ -416,6 +416,15 @@ interface CharPalette {
   shoes: string
 }
 
+/** Goddess greeter palette: white robe + gold hair/sandals. */
+export const GREETER_PALETTE: CharPalette = {
+  skin:  '#FFE0BD',  // soft warm skin
+  shirt: '#FFFFFF',  // white robe (top)
+  pants: '#FFFFFF',  // white robe (skirt) — same color so the dress reads as one piece
+  hair:  '#F4D03F',  // gold/blonde
+  shoes: '#D4AC0D',  // gold sandals
+}
+
 // Template keys for character pixel data
 const H = 'hair'
 const K = 'skin'
@@ -1059,6 +1068,125 @@ export const CHARACTER_TEMPLATES = {
     CHAR_RIGHT_READ_1, CHAR_RIGHT_READ_2,
   ],
 } as const
+
+// ════════════════════════════════════════════════════════════════
+// GREETER (goddess) sprites — long flowing hair + white robe
+// ════════════════════════════════════════════════════════════════
+//
+// Built from the standing CHAR_WALK_*_2 templates, with two edits:
+//   1. Hair extended past the shoulders to read as long flowing hair
+//   2. Pants area replaced with shirt color so the white robe reads as
+//      a single dress, slightly flared at the hem.
+
+const GREETER_DOWN: TemplateCell[][] = [
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, H, H, H, H, _, _, _, _, _, _],
+  [_, _, _, _, _, H, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, _, H, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, H, K, K, K, K, K, K, H, _, _, _, _],
+  [_, _, _, _, H, K, E, K, K, E, K, H, _, _, _, _],
+  [_, _, _, _, H, K, K, K, K, K, K, H, _, _, _, _],
+  [_, _, _, _, H, K, K, K, K, K, K, H, _, _, _, _],
+  [_, _, _, H, H, _, S, S, S, S, _, H, H, _, _, _],
+  [_, _, _, H, H, S, S, S, S, S, S, H, H, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, S, H, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, S, H, _, _, _],
+  [_, _, _, _, K, S, S, S, S, S, S, K, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, _, _, O, O, _, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, O, O, _, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+]
+
+const GREETER_UP: TemplateCell[][] = [
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, H, H, H, H, _, _, _, _, _, _],
+  [_, _, _, _, _, H, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, _, H, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, H, H, H, H, H, H, H, H, _, _, _, _],
+  [_, _, _, _, H, H, H, H, H, H, H, H, _, _, _, _],
+  [_, _, _, _, H, H, H, H, H, H, H, H, _, _, _, _],
+  [_, _, _, _, H, H, H, H, H, H, H, H, _, _, _, _],
+  [_, _, _, H, H, _, S, S, S, S, _, H, H, _, _, _],
+  [_, _, _, H, H, S, S, S, S, S, S, H, H, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, S, H, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, S, H, _, _, _],
+  [_, _, _, _, K, S, S, S, S, S, S, K, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, _, _, S, S, S, S, S, S, _, _, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, S, S, S, S, S, S, S, S, S, S, _, _, _],
+  [_, _, _, _, _, O, O, _, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, O, O, _, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+]
+
+const GREETER_RIGHT: TemplateCell[][] = [
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, _, _, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, _, _, H, H, H, H, H, _, _, _, _, _],
+  [_, _, _, _, _, H, K, K, K, K, K, H, _, _, _, _],
+  [_, _, _, _, _, H, K, K, K, E, K, H, _, _, _, _],
+  [_, _, _, _, _, H, K, K, K, K, K, H, _, _, _, _],
+  [_, _, _, _, _, H, K, K, K, K, H, _, _, _, _, _],
+  [_, _, _, _, H, H, _, S, S, S, _, H, H, _, _, _],
+  [_, _, _, _, H, H, S, S, S, S, S, H, H, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, H, _, _, _, _],
+  [_, _, _, _, H, S, S, S, S, S, S, H, _, _, _, _],
+  [_, _, _, _, _, K, S, S, S, S, K, _, _, _, _, _],
+  [_, _, _, _, _, _, S, S, S, S, _, _, _, _, _, _],
+  [_, _, _, _, _, _, S, S, S, S, _, _, _, _, _, _],
+  [_, _, _, _, _, _, S, S, S, S, _, _, _, _, _, _],
+  [_, _, _, _, S, S, S, S, S, S, S, S, _, _, _, _],
+  [_, _, _, _, S, S, S, S, S, S, S, S, _, _, _, _],
+  [_, _, _, _, S, S, S, S, S, S, S, S, _, _, _, _],
+  [_, _, _, _, _, _, O, O, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, _, O, O, _, O, O, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+]
+
+// LEFT is generated by horizontally flipping RIGHT (matches walker convention).
+const GREETER_LEFT: TemplateCell[][] = flipHorizontal(GREETER_RIGHT)
+
+// Memoize per-direction so the spriteCache (WeakMap keyed on array identity)
+// gets repeat hits and we don't repaint the greeter every frame.
+let _greeterCache: Record<Direction, SpriteData> | null = null
+function getGreeterCache(): Record<Direction, SpriteData> {
+  if (!_greeterCache) {
+    _greeterCache = {
+      [Dir.DOWN]:  resolveTemplate(GREETER_DOWN, GREETER_PALETTE),
+      [Dir.UP]:    resolveTemplate(GREETER_UP, GREETER_PALETTE),
+      [Dir.LEFT]:  resolveTemplate(GREETER_LEFT, GREETER_PALETTE),
+      [Dir.RIGHT]: resolveTemplate(GREETER_RIGHT, GREETER_PALETTE),
+    }
+  }
+  return _greeterCache
+}
+
+/** Resolve a greeter sprite for a given direction using the dedicated palette. */
+export function getGreeterSprite(dir: Direction): SpriteData {
+  const cache = getGreeterCache()
+  switch (dir) {
+    case Dir.UP:    return cache[Dir.UP]
+    case Dir.LEFT:  return cache[Dir.LEFT]
+    case Dir.RIGHT: return cache[Dir.RIGHT]
+    default:        return cache[Dir.DOWN]
+  }
+}
 
 // ════════════════════════════════════════════════════════════════
 // Loaded character sprites (from PNG assets)
