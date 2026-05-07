@@ -210,6 +210,17 @@ export function updateCharacter(
         }
         break
       }
+      // Ping-pong: stay parked at the slot, facing the table — the trip system
+      // is in charge of when to leave (e.g., partner left, agent became active).
+      if (
+        ch.tripMode === 'ping_pong' &&
+        ch.tripTile &&
+        ch.tileCol === ch.tripTile.col &&
+        ch.tileRow === ch.tripTile.row
+      ) {
+        ch.dir = ch.tileCol === 8 ? Direction.RIGHT : Direction.LEFT
+        break
+      }
       // Countdown wander timer
       ch.wanderTimer -= dt
       if (ch.wanderTimer <= 0) {
@@ -300,6 +311,15 @@ export function updateCharacter(
               ch.frameTimer = 0
               break
             }
+          }
+          // Ping-pong arrival: face toward the table center across from us.
+          if (
+            ch.tripMode === 'ping_pong' &&
+            ch.tripTile &&
+            ch.tileCol === ch.tripTile.col &&
+            ch.tileRow === ch.tripTile.row
+          ) {
+            ch.dir = ch.tileCol === 8 ? Direction.RIGHT : Direction.LEFT
           }
           ch.state = CharacterState.IDLE
           ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC)

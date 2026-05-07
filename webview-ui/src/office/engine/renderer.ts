@@ -602,6 +602,68 @@ export function renderActivePCScreens(
   ctx.restore()
 }
 
+// ── Ping-pong ball ──────────────────────────────────────────────
+
+/** Tile coords of the two ping-pong player slots (must match OfficeState.PING_PONG_SLOTS). */
+const PING_PONG_LEFT_TILE = { col: 8, row: 28 }
+const PING_PONG_RIGHT_TILE = { col: 12, row: 28 }
+
+/**
+ * Draws a small white ball bouncing between two ping-pong players.
+ * Ball oscillates left↔right at ~2 Hz with a sine arc for vertical bounce.
+ * Only renders when both player slots are occupied by tripMode === 'ping_pong' agents.
+ */
+export function renderPingPongBall(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  timeMs: number,
+): void {
+  let leftPlayer: Character | null = null
+  let rightPlayer: Character | null = null
+  for (const ch of characters) {
+    if (ch.tripMode !== 'ping_pong') continue
+    if (ch.tileCol === PING_PONG_LEFT_TILE.col && ch.tileRow === PING_PONG_LEFT_TILE.row) {
+      leftPlayer = ch
+    } else if (ch.tileCol === PING_PONG_RIGHT_TILE.col && ch.tileRow === PING_PONG_RIGHT_TILE.row) {
+      rightPlayer = ch
+    }
+  }
+  if (!leftPlayer || !rightPlayer) return
+
+  // Ball travels between the table edges in tile space.
+  // Left edge of table (col 9) → right edge (col 11). Use tile centers near the table top.
+  const tableY = 28 * TILE_SIZE + TILE_SIZE * 0.35 // a bit above the table center line
+  const leftX = 9 * TILE_SIZE + 1
+  const rightX = 11 * TILE_SIZE + TILE_SIZE - 2
+
+  // 2 Hz back-and-forth: phase ∈ [0,1) over 0.5s. Use a triangle wave for ball x.
+  const cycleSec = 0.5
+  const phase = ((timeMs / 1000) % cycleSec) / cycleSec
+  // Ping-pong wave: 0 → 1 → 0 across the cycle.
+  const tri = phase < 0.5 ? phase * 2 : (1 - phase) * 2
+  // Sine arc for vertical bounce — peaks mid-flight.
+  const archHeight = TILE_SIZE * 0.6
+  const archY = -Math.sin(phase * Math.PI * 2) * archHeight * 0.5 - archHeight * 0.4
+  const ballWX = leftX + (rightX - leftX) * tri
+  const ballWY = tableY + archY
+
+  const px = offsetX + ballWX * zoom
+  const py = offsetY + ballWY * zoom
+  const ballSize = Math.max(2, Math.round(3 * zoom))
+
+  ctx.save()
+  // Tiny dark outline
+  ctx.fillStyle = '#1a1a1a'
+  ctx.fillRect(px - 1, py - 1, ballSize + 2, ballSize + 2)
+  // White ball
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(px, py, ballSize, ballSize)
+  ctx.restore()
+}
+
 // ── Tool reaction effects ───────────────────────────────────────
 
 const EFFECT_GLYPHS: Record<ToolEffect['kind'], { glyph: string; color: string }> = {
@@ -754,6 +816,9 @@ export function renderFrame(
   if (activePCTiles && activePCTiles.length > 0) {
     renderActivePCScreens(ctx, activePCTiles, offsetX, offsetY, zoom, timeMs ?? performance.now())
   }
+
+  // Bouncing ball between two ping-pong players (under bubbles, above furniture)
+  renderPingPongBall(ctx, characters, offsetX, offsetY, zoom, timeMs ?? performance.now())
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)

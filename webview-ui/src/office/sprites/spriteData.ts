@@ -324,6 +324,55 @@ export const COFFEE_TABLE_SPRITE: SpriteData = (() => {
   ]
 })()
 
+/** Ping-pong table: 48x16 (3 tiles wide × 1 tile tall) — green top, white border + net, dark legs */
+export const PING_PONG_TABLE_SPRITE: SpriteData = (() => {
+  const G = '#1E7A3C' // table green
+  const W = '#FFFFFF' // border + net + lines
+  const D = '#1A1A1A' // legs / shadow
+  // 48 wide × 16 tall. Top 2 rows blank for visual height, then table surface, then legs.
+  const blank = (): string[] => new Array(48).fill(_)
+  const surface = (): string[] => {
+    // Green row with white edges; centered net column at index 23.
+    const r = new Array(48).fill(_) as string[]
+    r[0] = W
+    r[47] = W
+    for (let c = 1; c < 47; c++) r[c] = G
+    r[23] = W // net column
+    return r
+  }
+  const topBorder = (): string[] => {
+    const r = new Array(48).fill(_) as string[]
+    for (let c = 1; c < 47; c++) r[c] = W
+    return r
+  }
+  const bottomBorder = topBorder
+  const legRow = (): string[] => {
+    // Four small dark legs at corners: cols 2-3 and 44-45.
+    const r = new Array(48).fill(_) as string[]
+    r[2] = D; r[3] = D
+    r[44] = D; r[45] = D
+    return r
+  }
+  return [
+    blank(),         // 0
+    blank(),         // 1
+    topBorder(),     // 2 — top white edge
+    surface(),       // 3
+    surface(),       // 4
+    surface(),       // 5
+    surface(),       // 6
+    surface(),       // 7
+    surface(),       // 8
+    surface(),       // 9
+    surface(),       // 10
+    surface(),       // 11
+    bottomBorder(),  // 12 — bottom white edge
+    legRow(),        // 13
+    legRow(),        // 14
+    legRow(),        // 15
+  ]
+})()
+
 // ── Speech Bubble Sprites ───────────────────────────────────────
 
 /** Permission bubble: bright orange "!" badge demanding attention (11x13) */

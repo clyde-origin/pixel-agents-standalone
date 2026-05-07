@@ -95,6 +95,7 @@ export const FurnitureType = {
   LAMP: 'lamp',
   BEANBAG: 'beanbag',
   COFFEE_TABLE: 'coffee_table',
+  PING_PONG_TABLE: 'ping_pong_table',
 } as const
 export type FurnitureType = (typeof FurnitureType)[keyof typeof FurnitureType]
 
@@ -212,8 +213,9 @@ export interface Character {
   /** Current "field trip" away from the home desk, or null when at desk / wandering.
    *  - 'beanbag'   — sitting on a beanbag while idle (turn ended)
    *  - 'bookshelf' — standing at a bookshelf while a Read/Grep/etc tool is running
-   *  - 'pacing'    — walking back and forth in the library area while thinking */
-  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | null
+   *  - 'pacing'    — walking back and forth in the library area while thinking
+   *  - 'ping_pong' — standing at one end of the lounge ping-pong table */
+  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | null
   /** Tile the agent is occupying (or walking toward) for the current trip. */
   tripTile: { col: number; row: number } | null
   /** Home seat to return to when the trip ends. Saved when the trip begins. */

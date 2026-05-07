@@ -11,6 +11,7 @@ import {
   LAMP_SPRITE,
   BEANBAG_SPRITE,
   COFFEE_TABLE_SPRITE,
+  PING_PONG_TABLE_SPRITE,
 } from '../sprites/spriteData.js'
 
 export interface LoadedAssetData {
@@ -51,6 +52,7 @@ export const FURNITURE_CATALOG: CatalogEntryWithCategory[] = [
   { type: FurnitureType.LAMP,       label: 'Lamp',       footprintW: 1, footprintH: 1, sprite: LAMP_SPRITE,         isDesk: false, category: 'decor' },
   { type: FurnitureType.BEANBAG,    label: 'Beanbag',    footprintW: 1, footprintH: 1, sprite: BEANBAG_SPRITE,      isDesk: false, category: 'decor', backgroundTiles: 1 },
   { type: FurnitureType.COFFEE_TABLE,label:'Coffee Table',footprintW: 1, footprintH: 1, sprite: COFFEE_TABLE_SPRITE, isDesk: false, category: 'decor' },
+  { type: FurnitureType.PING_PONG_TABLE, label: 'Ping Pong Table', footprintW: 3, footprintH: 1, sprite: PING_PONG_TABLE_SPRITE, isDesk: false, category: 'misc' },
 
 ]
 
