@@ -565,9 +565,10 @@ export function renderActivePCScreens(
     // Quick blink: ~3 Hz square-ish wave; alpha drops briefly each cycle.
     const blinkPhase = ((timeMs * 0.003) + (seed * 0.137)) % 1
     const blink = blinkPhase < 0.06 ? 0.15 : 1
-    // Match the 12 px desk-surface lift applied in layoutToFurnitureInstances so the
-    // glow lines up with the lifted monitor sprite.
-    const SURFACE_LIFT_PX = 20
+    // Lift must match the per-PC lift in layoutToFurnitureInstances. Hero MERGE TO MAIN
+    // PCs (cols 9-10, rows 3-4) use 8 px; all others use 20 px.
+    const isHeroPC = (t.col === 9 || t.col === 10) && (t.row === 3 || t.row === 4)
+    const SURFACE_LIFT_PX = isHeroPC ? 8 : 20
     const px = offsetX + (t.col * TILE_SIZE + SCREEN_X) * zoom
     const py = offsetY + (t.row * TILE_SIZE + SCREEN_Y - SURFACE_LIFT_PX) * zoom
     const w = SCREEN_W * zoom
