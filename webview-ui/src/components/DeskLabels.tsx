@@ -18,29 +18,38 @@ interface ClusterDef {
   labelRow: number
   title: string
   tone: 'cool' | 'warm' | 'pink' | 'amber' | 'teal' | 'violet' | 'green'
+  /** Override Y translate. Default '-200%' (sits above the desk bottom edge). */
+  translateY?: string
+  /** Render title on two lines, split by '/'. */
+  multiLine?: boolean
+  /** Station side and tier — used to gate label visibility on revealedDeskIds.
+   *  Omit for the hero label (always visible). */
+  side?: 'l' | 'r'
+  tier?: number
 }
 
 const CLUSTERS: ClusterDef[] = [
-  // Hero MERGE TO MAIN — desk rows 3-4, bottom-of-desk = top of row 5 → labelRow 5.
-  { centerCol: 10, labelRow: 5, title: 'MERGE TO MAIN', tone: 'green' },
+  // Hero MERGE TO MAIN — sign sits well south of the chairs (row 7) on the sand path,
+  // centered on cols 9-10 (the seam of the shifted layout).
+  { centerCol: 10, labelRow: 7, title: 'Merge to/MAIN', tone: 'green', translateY: '0%', multiLine: true },
 
   // 12 stations: chair row N, desk-top row N+1, desk-bottom/PC row N+2.
   // labelRow = chair_row + 3 = top of the row just below the desk's bottom row,
   // i.e. the world-y of the desk's bottom edge. With translate(-50%, -100%) the
   // label's BOTTOM aligns with that edge, so it never covers the monitor.
   // Left column center = col 4, right column center = col 16.
-  { centerCol: 4,  labelRow: 9,  title: 'BUILD',           tone: 'cool' },
-  { centerCol: 16, labelRow: 9,  title: 'REFACTOR',        tone: 'amber' },
-  { centerCol: 4,  labelRow: 12, title: 'BUILDS & TESTS',  tone: 'warm' },
-  { centerCol: 16, labelRow: 12, title: 'GIT & PRS',       tone: 'pink' },
-  { centerCol: 4,  labelRow: 15, title: 'TEST',            tone: 'teal' },
-  { centerCol: 16, labelRow: 15, title: 'SHIP',            tone: 'green' },
-  { centerCol: 4,  labelRow: 18, title: 'REVIEW',          tone: 'pink' },
-  { centerCol: 16, labelRow: 18, title: 'EXPLORE',         tone: 'violet' },
-  { centerCol: 4,  labelRow: 21, title: 'DEBUG',           tone: 'violet' },
-  { centerCol: 16, labelRow: 21, title: 'DEPLOY',          tone: 'green' },
-  { centerCol: 4,  labelRow: 24, title: 'DOCS',            tone: 'cool' },
-  { centerCol: 16, labelRow: 24, title: 'REVIEW & DOCS',   tone: 'amber' },
+  { centerCol: 4,  labelRow: 9,  title: 'BUILD',           tone: 'cool',   side: 'l', tier: 0 },
+  { centerCol: 16, labelRow: 9,  title: 'REFACTOR',        tone: 'amber',  side: 'r', tier: 0 },
+  { centerCol: 4,  labelRow: 12, title: 'BUILDS & TESTS',  tone: 'warm',   side: 'l', tier: 1 },
+  { centerCol: 16, labelRow: 12, title: 'GIT & PRS',       tone: 'pink',   side: 'r', tier: 1 },
+  { centerCol: 4,  labelRow: 15, title: 'TEST',            tone: 'teal',   side: 'l', tier: 2 },
+  { centerCol: 16, labelRow: 15, title: 'SHIP',            tone: 'green',  side: 'r', tier: 2 },
+  { centerCol: 4,  labelRow: 18, title: 'REVIEW',          tone: 'pink',   side: 'l', tier: 3 },
+  { centerCol: 16, labelRow: 18, title: 'EXPLORE',         tone: 'violet', side: 'r', tier: 3 },
+  { centerCol: 4,  labelRow: 21, title: 'DEBUG',           tone: 'violet', side: 'l', tier: 4 },
+  { centerCol: 16, labelRow: 21, title: 'DEPLOY',          tone: 'green',  side: 'r', tier: 4 },
+  { centerCol: 4,  labelRow: 24, title: 'DOCS',            tone: 'cool',   side: 'l', tier: 5 },
+  { centerCol: 16, labelRow: 24, title: 'REVIEW & DOCS',   tone: 'amber',  side: 'r', tier: 5 },
 ]
 
 const TONE_BG: Record<ClusterDef['tone'], string> = {
@@ -86,9 +95,21 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
   const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panX)
   const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panY)
 
+  // Hide labels for hidden desks: a station label only appears when at least one of its
+  // pod's desks has been revealed. Hero label has no side/tier — always visible.
+  const revealed = officeState.revealedDeskIds
+  const visibleClusters = CLUSTERS.filter((c) => {
+    if (c.side === undefined || c.tier === undefined) return true
+    const prefix = `station-${c.side}-${c.tier}-`
+    for (const gid of revealed) {
+      if (gid.startsWith(prefix)) return true
+    }
+    return false
+  })
+
   return (
     <>
-      {CLUSTERS.map((c, i) => {
+      {visibleClusters.map((c, i) => {
         // Center the label on the paired-desk pod's seam (centerCol = pod.col + 2).
         const wx = c.centerCol * TILE_SIZE
         // Anchor at the world-y of the desk's bottom edge (labelRow * TILE_SIZE).
@@ -97,6 +118,8 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
         const wy = c.labelRow * TILE_SIZE
         const screenX = (deviceOffsetX + wx * zoom) / dpr
         const screenY = (deviceOffsetY + wy * zoom) / dpr
+        const ty = c.translateY ?? '-200%'
+        const lines = c.multiLine ? c.title.split('/') : [c.title]
         return (
           <div
             key={`cluster-${i}`}
@@ -104,15 +127,16 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
               position: 'absolute',
               left: screenX,
               top: screenY,
-              transform: 'translate(-50%, -200%)',
+              transform: `translate(-50%, ${ty})`,
               pointerEvents: 'none',
               zIndex: 30,
             }}
           >
             <span
               style={{
+                display: 'inline-block',
                 fontSize: '8px',
-                lineHeight: 1,
+                lineHeight: 1.15,
                 padding: '1px 5px',
                 background: TONE_BG[c.tone],
                 color: '#f4f4ff',
@@ -123,9 +147,14 @@ export function DeskLabels({ officeState, containerRef, zoom, panRef }: DeskLabe
                 letterSpacing: '0.6px',
                 boxShadow: '0 1px 0 rgba(0,0,0,0.4)',
                 fontFamily: 'inherit',
+                textAlign: 'center',
               }}
             >
-              {c.title}
+              {lines.map((line, li) => (
+                <span key={li} style={{ display: 'block' }}>
+                  {line}
+                </span>
+              ))}
             </span>
           </div>
         )

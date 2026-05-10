@@ -12,37 +12,56 @@ interface BottomToolbarProps {
   workspaceFolders: WorkspaceFolder[]
 }
 
+// Top-left column. Sits below ZoomControls (zoom +/- end ~88px from top).
 const panelStyle: React.CSSProperties = {
   position: 'absolute',
-  bottom: 10,
-  left: 10,
+  top: 100,
+  left: 8,
   zIndex: 'var(--pixel-controls-z)',
   display: 'flex',
-  alignItems: 'center',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
   gap: 4,
+}
+
+// Toggle (chevron) — matches ZoomControls button shape: 40x40 square.
+const toggleBtnBase: React.CSSProperties = {
+  width: 40,
+  height: 40,
+  padding: 0,
   background: 'var(--pixel-bg)',
+  color: 'var(--pixel-text)',
   border: '2px solid var(--pixel-border)',
   borderRadius: 0,
-  padding: '4px 6px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   boxShadow: 'var(--pixel-shadow)',
 }
 
-const btnBase: React.CSSProperties = {
-  padding: '5px 10px',
-  fontSize: '24px',
+// Expanded action buttons — 40 tall, auto width to fit labels.
+const actionBtnBase: React.CSSProperties = {
+  height: 40,
+  padding: '0 12px',
+  fontSize: '22px',
   color: 'var(--pixel-text)',
   background: 'var(--pixel-btn-bg)',
-  border: '2px solid transparent',
+  border: '2px solid var(--pixel-border)',
   borderRadius: 0,
   cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-start',
+  boxShadow: 'var(--pixel-shadow)',
+  whiteSpace: 'nowrap',
 }
 
-const btnActive: React.CSSProperties = {
-  ...btnBase,
+const actionBtnActive: React.CSSProperties = {
+  ...actionBtnBase,
   background: 'var(--pixel-active-bg)',
   border: '2px solid var(--pixel-accent)',
 }
-
 
 export function BottomToolbar({
   isEditMode,
@@ -53,6 +72,7 @@ export function BottomToolbar({
   workspaceFolders,
 }: BottomToolbarProps) {
   const [hovered, setHovered] = useState<string | null>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false)
   const [hoveredFolder, setHoveredFolder] = useState<number | null>(null)
@@ -87,105 +107,142 @@ export function BottomToolbar({
 
   return (
     <div style={panelStyle}>
-      <div ref={folderPickerRef} style={{ position: 'relative' }}>
-        <button
-          onClick={handleAgentClick}
-          onMouseEnter={() => setHovered('agent')}
-          onMouseLeave={() => setHovered(null)}
+      {/* Toggle chevron — always visible, square to match zoom buttons */}
+      <button
+        onClick={() => {
+          setIsExpanded((v) => !v)
+          if (isExpanded) setIsFolderPickerOpen(false)
+        }}
+        onMouseEnter={() => setHovered('toggle')}
+        onMouseLeave={() => setHovered(null)}
+        style={{
+          ...toggleBtnBase,
+          background: hovered === 'toggle' ? 'var(--pixel-btn-hover-bg)' : toggleBtnBase.background,
+        }}
+        title={isExpanded ? 'Hide menu' : 'Show menu'}
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 18 18"
+          fill="none"
           style={{
-            ...btnBase,
-            padding: '5px 12px',
-            background:
-              hovered === 'agent' || isFolderPickerOpen
-                ? 'var(--pixel-agent-hover-bg)'
-                : 'var(--pixel-agent-bg)',
-            border: '2px solid var(--pixel-agent-border)',
-            color: 'var(--pixel-agent-text)',
+            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 120ms ease-out',
           }}
         >
-          + Agent
-        </button>
-        {isFolderPickerOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: 0,
-              marginBottom: 4,
-              background: 'var(--pixel-bg)',
-              border: '2px solid var(--pixel-border)',
-              borderRadius: 0,
-              boxShadow: 'var(--pixel-shadow)',
-              minWidth: 160,
-              zIndex: 'var(--pixel-controls-z)',
-            }}
-          >
-            {workspaceFolders.map((folder, i) => (
-              <button
-                key={folder.path}
-                onClick={() => handleFolderSelect(folder)}
-                onMouseEnter={() => setHoveredFolder(i)}
-                onMouseLeave={() => setHoveredFolder(null)}
+          <polyline
+            points="4,7 9,12 14,7"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      </button>
+
+      {/* Expanded action buttons */}
+      {isExpanded && (
+        <>
+          <div ref={folderPickerRef} style={{ position: 'relative' }}>
+            <button
+              onClick={handleAgentClick}
+              onMouseEnter={() => setHovered('agent')}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                ...actionBtnBase,
+                background:
+                  hovered === 'agent' || isFolderPickerOpen
+                    ? 'var(--pixel-agent-hover-bg)'
+                    : 'var(--pixel-agent-bg)',
+                border: '2px solid var(--pixel-agent-border)',
+                color: 'var(--pixel-agent-text)',
+              }}
+            >
+              + Agent
+            </button>
+            {isFolderPickerOpen && (
+              <div
                 style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '6px 10px',
-                  fontSize: '22px',
-                  color: 'var(--pixel-text)',
-                  background: hoveredFolder === i ? 'var(--pixel-btn-hover-bg)' : 'transparent',
-                  border: 'none',
+                  position: 'absolute',
+                  top: 0,
+                  left: '100%',
+                  marginLeft: 4,
+                  background: 'var(--pixel-bg)',
+                  border: '2px solid var(--pixel-border)',
                   borderRadius: 0,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
+                  boxShadow: 'var(--pixel-shadow)',
+                  minWidth: 160,
+                  zIndex: 'var(--pixel-controls-z)',
                 }}
               >
-                {folder.name}
-              </button>
-            ))}
+                {workspaceFolders.map((folder, i) => (
+                  <button
+                    key={folder.path}
+                    onClick={() => handleFolderSelect(folder)}
+                    onMouseEnter={() => setHoveredFolder(i)}
+                    onMouseLeave={() => setHoveredFolder(null)}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '6px 10px',
+                      fontSize: '22px',
+                      color: 'var(--pixel-text)',
+                      background: hoveredFolder === i ? 'var(--pixel-btn-hover-bg)' : 'transparent',
+                      border: 'none',
+                      borderRadius: 0,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {folder.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <button
-        onClick={onToggleEditMode}
-        onMouseEnter={() => setHovered('edit')}
-        onMouseLeave={() => setHovered(null)}
-        style={
-          isEditMode
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'edit' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title="Edit office layout"
-      >
-        Layout
-      </button>
-      <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => setIsSettingsOpen((v) => !v)}
-          onMouseEnter={() => setHovered('settings')}
-          onMouseLeave={() => setHovered(null)}
-          style={
-            isSettingsOpen
-              ? { ...btnActive }
-              : {
-                  ...btnBase,
-                  background: hovered === 'settings' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-                }
-          }
-          title="Settings"
-        >
-          Settings
-        </button>
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          isDebugMode={isDebugMode}
-          onToggleDebugMode={onToggleDebugMode}
-        />
-      </div>
+          <button
+            onClick={onToggleEditMode}
+            onMouseEnter={() => setHovered('edit')}
+            onMouseLeave={() => setHovered(null)}
+            style={
+              isEditMode
+                ? actionBtnActive
+                : {
+                    ...actionBtnBase,
+                    background: hovered === 'edit' ? 'var(--pixel-btn-hover-bg)' : actionBtnBase.background,
+                  }
+            }
+            title="Edit office layout"
+          >
+            Layout
+          </button>
+          <button
+            onClick={() => setIsSettingsOpen((v) => !v)}
+            onMouseEnter={() => setHovered('settings')}
+            onMouseLeave={() => setHovered(null)}
+            style={
+              isSettingsOpen
+                ? actionBtnActive
+                : {
+                    ...actionBtnBase,
+                    background: hovered === 'settings' ? 'var(--pixel-btn-hover-bg)' : actionBtnBase.background,
+                  }
+            }
+            title="Settings"
+          >
+            Settings
+          </button>
+        </>
+      )}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isDebugMode={isDebugMode}
+        onToggleDebugMode={onToggleDebugMode}
+      />
     </div>
   )
 }

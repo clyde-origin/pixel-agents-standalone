@@ -239,6 +239,11 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           officeState.effects,
           officeState.getActivePCTiles(),
           performance.now(),
+          officeState.getPortalRings(performance.now()),
+          officeState.pingPongMatch,
+          officeState.plantedFlowers,
+          2200,
+          officeState.animals,
         )
         offsetRef.current = { x: offsetX, y: offsetY }
 

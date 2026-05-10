@@ -4,7 +4,16 @@ import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../ty
 /** Probability that an idle wander step will target a lounge tile (FLOOR_2) when any exist. */
 const LOUNGE_BIAS_PROBABILITY = 0.75
 import type { CharacterSprites } from '../sprites/spriteData.js'
-import { getGreeterSprite, GREETER_PALETTE, GREETER2_PALETTE } from '../sprites/spriteData.js'
+import {
+  getGreeterSprite,
+  GREETER_PALETTE,
+  GREETER2_PALETTE,
+  KNIGHT_DOWN_SPRITE,
+  KNIGHT_UP_SPRITE,
+  KNIGHT_LEFT_SPRITE,
+  KNIGHT_RIGHT_SPRITE,
+  KNIGHT_CEREMONY_SPRITE,
+} from '../sprites/spriteData.js'
 import { findPath } from '../layout/tileMap.js'
 import {
   WALK_SPEED_PX_PER_SEC,
@@ -219,11 +228,11 @@ export function updateCharacter(
         ch.tileRow === ch.tripTile.row
       ) {
         // Ping-pong: tileCol 12 = LEFT player → RIGHT facing; 16 = RIGHT player → LEFT facing
-        // Chess:     tileCol 2  = LEFT player → RIGHT facing; 6  = RIGHT player → LEFT facing
+        // Chess:     tileCol 3  = LEFT chair → RIGHT facing; 5  = RIGHT chair → LEFT facing
         if (ch.tripMode === 'ping_pong') {
           ch.dir = ch.tileCol === 12 ? Direction.RIGHT : Direction.LEFT
         } else {
-          ch.dir = ch.tileCol === 2 ? Direction.RIGHT : Direction.LEFT
+          ch.dir = ch.tileCol === 3 ? Direction.RIGHT : Direction.LEFT
         }
         break
       }
@@ -431,6 +440,16 @@ export function updateCharacter(
 
 /** Get the correct sprite frame for a character's current state and direction */
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
+  if (ch.isKnight) {
+    if (ch.knightState === 'ceremony') return KNIGHT_CEREMONY_SPRITE
+    switch (ch.dir) {
+      case Direction.UP: return KNIGHT_UP_SPRITE
+      case Direction.LEFT: return KNIGHT_LEFT_SPRITE
+      case Direction.RIGHT: return KNIGHT_RIGHT_SPRITE
+      case Direction.DOWN:
+      default: return KNIGHT_DOWN_SPRITE
+    }
+  }
   // Goddess greeter renders with a dedicated sprite set (long hair + flowing dress).
   if (ch.isGreeter) {
     const palette = ch.greeterVariant === 'green' ? GREETER2_PALETTE : GREETER_PALETTE

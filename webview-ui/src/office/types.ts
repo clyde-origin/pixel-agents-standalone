@@ -74,6 +74,23 @@ export interface FurnitureInstance {
   y: number
   /** Y value used for depth sorting (typically bottom edge) */
   zY: number
+  /** Station-desk groupId, if this instance belongs to a dynamically-revealed desk. */
+  groupId?: string
+  /** Render alpha 0..1 (default 1). Used during reveal/hide portal animation. */
+  animAlpha?: number
+  /** Render scale 0..1 (default 1), applied around the bottom-center of the sprite. */
+  animScale?: number
+}
+
+/** A portal effect ring rendered on the floor during desk reveal/hide. */
+export interface PortalRing {
+  /** Center in pixel coordinates (pre-zoom, pre-pan). */
+  cx: number
+  cy: number
+  /** Outer radius in pixels (pre-zoom). */
+  radius: number
+  /** 0..1 ring opacity. */
+  alpha: number
 }
 
 export interface ToolActivity {
@@ -97,6 +114,10 @@ export const FurnitureType = {
   COFFEE_TABLE: 'coffee_table',
   PING_PONG_TABLE: 'ping_pong_table',
   CHESS_SET: 'chess_set',
+  POOL_CHAIR: 'pool_chair',
+  KNIGHT: 'knight',
+  STUMP: 'stump',
+  CAMPFIRE: 'campfire',
 } as const
 export type FurnitureType = (typeof FurnitureType)[keyof typeof FurnitureType]
 
@@ -217,7 +238,7 @@ export interface Character {
    *  - 'pacing'    — walking back and forth in the library area while thinking
    *  - 'ping_pong' — standing at one end of the lounge ping-pong table
    *  - 'chess'     — standing at one end of the lounge chess set */
-  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | null
+  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | null
   /** Tile the agent is occupying (or walking toward) for the current trip. */
   tripTile: { col: number; row: number } | null
   /** Home seat to return to when the trip ends. Saved when the trip begins. */
@@ -237,6 +258,22 @@ export interface Character {
   greeterVariant?: 'gold' | 'green'
   /** SPAWNING agents: which hug stage. 0 = not started; 1 = hugging right (gold); 2 = hugging left (green); 3 = done. */
   hugStage?: number
+  /** True for the medieval knight NPC. He wanders the violet carpet and intercepts agents
+   *  who just finished working to perform a brief knighting ceremony. */
+  isKnight?: boolean
+  /** Knight FSM phase. */
+  knightState?: 'home' | 'wander' | 'going' | 'ceremony' | 'returning'
+  /** Timestamp (performance.now() ms) when the current knightState was entered. */
+  knightStateStartMs?: number
+  /** ID of the agent currently being walked-to / knighted (in 'going' or 'ceremony' state). */
+  knightAgentId?: number | null
+  /** True while an agent is queued/being targeted by the knight; pauses their trip logic. */
+  isAwaitingKnight?: boolean
+  /** True while an agent is actively in the knighting ceremony (knight has reached them). */
+  isBeingKnighted?: boolean
+  /** Milliseconds remaining in the current planting ceremony (counts down from
+   *  PLANTING_DURATION_MS). Undefined when not actively planting. */
+  plantingTimer?: number
 }
 
 export interface ToolEffect {

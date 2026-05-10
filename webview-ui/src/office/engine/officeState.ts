@@ -70,19 +70,73 @@ export class OfficeState {
   /** Whether the greeter NPC has been initialized. */
   private greeterInitialized = false
 
+  // ── Ping-pong match ──────────────────────────────────────────────
+  /** Live match state. Created when both PP slots are occupied; cleared when a slot
+   *  empties or a game ends. */
+  pingPongMatch: {
+    leftScore: number
+    rightScore: number
+    phase: 'rallying' | 'scoring' | 'celebrating'
+    phaseStartMs: number
+    pointDurationMs: number
+    /** Side that won the last point — drives ball-resting position + winner bounce. */
+    lastPointWinner: 'left' | 'right' | null
+  } | null = null
+  private static readonly PP_SCORE_TO_WIN = 7
+  private static readonly PP_POINT_MIN_MS = 2000
+  private static readonly PP_POINT_MAX_MS = 4000
+  private static readonly PP_SCORING_MS = 500
+  private static readonly PP_CELEBRATING_MS = 1200
+
+  // ── Dynamic desk reveal/hide ─────────────────────────────────────
+  /** Station-desk groupIds currently visible (e.g. "station-l-0-build-d0"). Empty initially —
+   *  only the hero MERGE TO MAIN desk + lounge show. Desks get added when no PCs are free
+   *  and removed after DESK_DESPAWN_MS of being fully empty. */
+  revealedDeskIds: Set<string> = new Set()
+  /** Pre-computed reveal order: outermost-first, top-down, alternating L/R. */
+  private revealQueue: string[] = []
+  /** When each revealed desk last had zero seated agents. Cleared once it's reoccupied. */
+  private deskLastEmptyAt: Map<string, number> = new Map()
+  /** Active portal animations by groupId. Reveal: desk is in revealedDeskIds while alpha
+   *  ramps 0→1. Hide: stays in revealedDeskIds during the fade-out, then removed. */
+  private deskAnimations: Map<string, { type: 'reveal' | 'hide'; startMs: number }> = new Map()
+  /** A desk is hidden after being empty this long. */
+  private static readonly DESK_DESPAWN_MS = 5 * 60 * 1000
+  private static readonly REVEAL_ANIM_MS = 700
+  private static readonly HIDE_ANIM_MS = 600
+  /** Despawn check throttling. */
+  private lastDespawnCheckMs = 0
+  private static readonly DESPAWN_CHECK_INTERVAL_MS = 5000
+
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout()
     this.tileMap = layoutToTileMap(this.layout)
     this.seats = layoutToSeats(this.layout.furniture)
-    this.blockedTiles = getBlockedTiles(this.layout.furniture)
-    this.furniture = layoutToFurnitureInstances(this.layout.furniture)
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
+    this.buildRevealQueue()
+    this.rebuildVisibleState()
     this.ensureGreeter()
   }
 
   /** Sentinel ids for the two persistent greeter NPCs. Far below subagent IDs (which start at -1 and decrement). */
   private static readonly GREETER_ID = -1000000     // gold/right
   private static readonly GREETER2_ID = -1000001    // green/left
+  /** Sentinel id for the knight NPC. */
+  private static readonly KNIGHT_ID = -1000002
+  /** Knight default home tile (in front of the Merge to / MAIN sign). */
+  private static readonly KNIGHT_HOME_COL = 10
+  private static readonly KNIGHT_HOME_ROW = 7
+  /** Violet carpet wander zone (cols 9..12, rows 6..15). */
+  private static readonly KNIGHT_WANDER_MIN_COL = 9
+  private static readonly KNIGHT_WANDER_MAX_COL = 12
+  private static readonly KNIGHT_WANDER_MIN_ROW = 6
+  private static readonly KNIGHT_WANDER_MAX_ROW = 15
+  /** Ceremony duration. */
+  private static readonly KNIGHT_CEREMONY_MS = 1500
+  /** Wander dwell after reaching a target tile. */
+  private static readonly KNIGHT_HOME_DWELL_MS = 1500
+  private static readonly KNIGHT_WANDER_DWELL_MS = 1500
+  /** Safety net — auto-free an agent if the knight hasn't reached them in this long. */
+  private static readonly KNIGHT_QUEUE_TIMEOUT_MS = 5000
   /** Total ms from matrix-spawn start through both hugs (300 + 600 + 1200 + 1200 + buffer). */
   private static readonly SPAWN_INTERVAL_MS = 3500
   /** Pad tile location (must match SPAWN_PAD_TILE_COL/ROW in renderer.ts). */
@@ -131,7 +185,80 @@ export class OfficeState {
       ch.seatId = null
       this.characters.set(OfficeState.GREETER2_ID, ch)
     }
+
+    // Knight is currently disabled as a moving NPC — see hero-knight furniture entry
+    // in the layout for the static guard. Re-enable once we have a stable wander loop
+    // that doesn't interfere with agent spawn flow.
+
+    // Animals — initialize on first call only.
+    if (this.animals.length === 0) {
+      for (const def of OfficeState.ANIMAL_DEFS) {
+        const homeX = def.homeCol * TILE_SIZE + TILE_SIZE / 2
+        const homeY = def.homeRow * TILE_SIZE + TILE_SIZE / 2
+        const watchX = def.watchCol * TILE_SIZE + TILE_SIZE / 2
+        const watchY = def.watchRow * TILE_SIZE + TILE_SIZE / 2
+        this.animals.push({
+          kind: def.kind,
+          homeX, homeY, watchX, watchY,
+          x: homeX, y: homeY,
+          facing: 'right',
+          targetX: homeX, targetY: homeY,
+          nextHopAt: performance.now() + Math.random() * 2000,
+        })
+      }
+    }
   }
+
+  /** FIFO of agent IDs awaiting a knighting ceremony. setAgentActive(_, false) enqueues. */
+  private knightingQueue: number[] = []
+  /** When each queued agent was added — used to time out stale entries. */
+  private knightingQueueTimes: Map<number, number> = new Map()
+
+  // ── Planting (idle agents plant a flower before going to leisure) ──
+  /** Permanent flowers planted by idle agents, keyed by "col,row". Value is the flower
+   *  color hex string. Added to during gameplay; rendered alongside the procedural flowers. */
+  plantedFlowers: Map<string, string> = new Map()
+  /** Agent IDs that should plant something on their next trip selection. Populated when
+   *  setAgentActive(_, false) fires; cleared when the agent finishes planting. */
+  private pendingPlant: Set<number> = new Set()
+  /** Tiles already chosen as planting targets but not yet completed — keep them off the
+   *  candidate pool so two agents don't pick the same tile. */
+  private claimedPlantTiles: Set<string> = new Set()
+  private static readonly PLANTING_DURATION_MS = 2200
+  private static readonly PLANTABLE_FLOWER_COLORS = [
+    '#ff6b8a', '#ffd66b', '#a3d8ff', '#ffffff', '#ff9f43', '#e066ff', '#7be891', '#ff8060',
+  ]
+
+  // ── Forest animals ──
+  /** Decorative critters living on the meadow. They idle near a home tile and gather
+   *  around the merge desk when all 4 hero PCs are active. Pure visual (no pathfinding,
+   *  no collision). World pixel coordinates. */
+  animals: Array<{
+    kind: 'rabbit' | 'squirrel'
+    homeX: number
+    homeY: number
+    watchX: number
+    watchY: number
+    x: number
+    y: number
+    facing: 'left' | 'right'
+    /** Current random hop target while idling (within HOP_RADIUS_PX of home). */
+    targetX: number
+    targetY: number
+    /** Timestamp (performance.now ms) at which to pick a new random hop target. */
+    nextHopAt: number
+  }> = []
+  private static readonly ANIMAL_HOP_RADIUS_PX = 32   // ~2 tiles around home
+  private static readonly ANIMAL_HOP_MIN_MS = 1500
+  private static readonly ANIMAL_HOP_MAX_MS = 3500
+  private static readonly ANIMAL_DEFS = [
+    // Rabbit in upper-left meadow → watches from west of the chairs.
+    { kind: 'rabbit' as const,   homeCol: 3,  homeRow: 9,  watchCol: 6,  watchRow: 6 },
+    // Squirrel in upper-right meadow → watches from east.
+    { kind: 'squirrel' as const, homeCol: 16, homeRow: 13, watchCol: 13, watchRow: 6 },
+    // Rabbit in mid-right meadow → watches behind center.
+    { kind: 'rabbit' as const,   homeCol: 15, homeRow: 19, watchCol: 10, watchRow: 6 },
+  ]
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
@@ -139,9 +266,21 @@ export class OfficeState {
     this.layout = layout
     this.tileMap = layoutToTileMap(layout)
     this.seats = layoutToSeats(layout.furniture)
-    this.blockedTiles = getBlockedTiles(layout.furniture)
-    this.rebuildFurnitureInstances()
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
+    this.buildRevealQueue()
+    // Drop any revealed desk groupIds that no longer exist in the new layout.
+    for (const gid of Array.from(this.revealedDeskIds)) {
+      if (!this.revealQueue.includes(gid)) this.revealedDeskIds.delete(gid)
+    }
+    // Make sure any desk currently occupied by a character (e.g. across a layout reload) is
+    // visible — agents keep their seats in the reassignment passes below, so their desks
+    // must be revealed.
+    for (const ch of this.characters.values()) {
+      if (!ch.seatId) continue
+      const chairUid = ch.seatId.split(':')[0]
+      const gid = this.deskGroupId(chairUid)
+      if (gid) this.revealedDeskIds.add(gid)
+    }
+    this.rebuildVisibleState()
 
     // Clear all trip state — trip slot coords (ping-pong, beanbag, bookshelf positions) may
     // have moved with the new layout, so existing trips are stale. Next tick's desiredTripFor
@@ -256,7 +395,13 @@ export class OfficeState {
 
   private findFreeSeat(): string | null {
     for (const [uid, seat] of this.seats) {
-      if (!seat.assigned) return uid
+      if (seat.assigned) continue
+      // Skip seats whose desk hasn't been revealed yet (station desks gate by revealedDeskIds;
+      // hero/lounge chairs return null groupId and are always available).
+      const chairUid = uid.split(':')[0]
+      const gid = this.deskGroupId(chairUid)
+      if (gid && !this.revealedDeskIds.has(gid)) continue
+      return uid
     }
     return null
   }
@@ -301,6 +446,14 @@ export class OfficeState {
     // Reserve a seat NOW so concurrent addAgent / pickHomeSeatId calls don't double-assign.
     let reservedSeatId: string | null = null
     if (preferredSeatId && this.seats.has(preferredSeatId)) {
+      // If the agent is restoring to a seat at a hidden station desk, reveal that desk first.
+      const preferredChairUid = preferredSeatId.split(':')[0]
+      const preferredGid = this.deskGroupId(preferredChairUid)
+      if (preferredGid && !this.revealedDeskIds.has(preferredGid)) {
+        this.revealedDeskIds.add(preferredGid)
+        this.deskLastEmptyAt.delete(preferredGid)
+        this.rebuildVisibleState()
+      }
       const seat = this.seats.get(preferredSeatId)!
       if (!seat.assigned) {
         seat.assigned = true
@@ -308,7 +461,11 @@ export class OfficeState {
       }
     }
     if (!reservedSeatId) {
-      const free = this.findFreeSeat()
+      let free = this.findFreeSeat()
+      // No free seat among visible desks → reveal the next desk and try again.
+      if (!free && this.revealNextDesk()) {
+        free = this.findFreeSeat()
+      }
       if (free) {
         this.seats.get(free)!.assigned = true
         reservedSeatId = free
@@ -362,7 +519,10 @@ export class OfficeState {
     if (args.seatId && this.seats.has(args.seatId)) {
       seatId = args.seatId
     } else {
-      const free = this.findFreeSeat()
+      let free = this.findFreeSeat()
+      if (!free && this.revealNextDesk()) {
+        free = this.findFreeSeat()
+      }
       if (free) {
         this.seats.get(free)!.assigned = true
         seatId = free
@@ -700,26 +860,49 @@ export class OfficeState {
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id)
     if (ch) {
+      const wasActive = ch.isActive
       ch.isActive = active
       if (!active) {
-        // Sentinel -1: signals turn just ended, skip next seat rest timer.
-        // Prevents the WALK handler from setting a 2-4 min rest on arrival.
         ch.seatTimer = -1
         ch.path = []
         ch.moveProgress = 0
+        // Just finished work → plant something on the meadow before idle leisure.
+        if (wasActive && !ch.isGreeter && !ch.isKnight) {
+          this.pendingPlant.add(id)
+        }
+      } else {
+        // Re-activated mid-plant — drop the planting intent so they head back to work.
+        this.pendingPlant.delete(id)
+        if (ch.tripMode === 'planting') {
+          // Free the claimed tile.
+          if (ch.tripTile) {
+            this.claimedPlantTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+          }
+          ch.plantingTimer = undefined
+        }
       }
       this.rebuildFurnitureInstances()
     }
   }
 
-  /** Tiles holding a PC whose seated agent is actively working — used by the
-   *  renderer to paint an animated screen-glow over the monitor. */
+  /** Tiles holding a PC whose seated agent should be rendered as "fully on".
+   *  - Non-hero seats: must be actively working (isActive=true).
+   *  - Hero merge-to-main seats: must be PHYSICALLY at the chair (not still walking to it).
+   *    This drives the screen glow + beams + sparkles. While walking, the PC just charges up. */
   getActivePCTiles(): Array<{ col: number; row: number; agentId: number }> {
     const result: Array<{ col: number; row: number; agentId: number }> = []
     for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId) continue
+      if (!ch.seatId) continue
+      if (ch.isGreeter || ch.isKnight) continue
       const seat = this.seats.get(ch.seatId)
       if (!seat) continue
+      const isHeroSeat = ch.seatId.startsWith('hero-merge-chair-')
+      if (isHeroSeat) {
+        // Hero: agent must be at the chair tile to count as "in use".
+        if (ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow) continue
+      } else {
+        if (!ch.isActive) continue
+      }
       const dCol = seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0
       const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0
       // Walk the facing direction looking for a PC tile in front of the agent.
@@ -736,6 +919,204 @@ export class OfficeState {
       }
     }
     return result
+  }
+
+  /** Visibility filter: keeps everything except hidden station desks. Hero desks, lounge,
+   *  decorations, etc. always pass through; station desks pass only if their groupId is
+   *  in revealedDeskIds. */
+  private getVisibleFurniture(): PlacedFurniture[] {
+    return this.layout.furniture.filter((f) => {
+      const gid = this.deskGroupId(f.uid)
+      if (!gid) return true
+      return this.revealedDeskIds.has(gid)
+    })
+  }
+
+  /** Recompute blocked/walkable/furniture from the currently-visible subset. Call after
+   *  any change to revealedDeskIds. */
+  private rebuildVisibleState(): void {
+    const visible = this.getVisibleFurniture()
+    this.blockedTiles = getBlockedTiles(visible)
+    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
+    this.rebuildFurnitureInstances()
+  }
+
+  /** Extract the station-desk groupId from a furniture uid (e.g.
+   *  "station-l-0-build-d0-chair-l" → "station-l-0-build-d0"). Returns null for
+   *  hero/lounge/decoration uids. */
+  private deskGroupId(uid: string | undefined): string | null {
+    if (!uid || !uid.startsWith('station-')) return null
+    const m = uid.match(/^(station-[lr]-\d+-.+?-d\d+)(?=-)/)
+    return m ? m[1] : null
+  }
+
+  /** Build the ordered reveal queue from the layout's station desks. Order:
+   *  outermost-first (lowest col on left, highest col on right), then top-down by tier,
+   *  alternating L/R within the same outer-rank+tier. */
+  private buildRevealQueue(): void {
+    const desks = new Set<string>()
+    for (const f of this.layout.furniture) {
+      const gid = this.deskGroupId(f.uid)
+      if (gid) desks.add(gid)
+    }
+    type Parsed = { gid: string; side: 'l' | 'r'; tier: number; dOff: number }
+    const parsed: Parsed[] = []
+    for (const gid of desks) {
+      const m = gid.match(/^station-([lr])-(\d+)-.+-d(\d+)$/)
+      if (!m) continue
+      parsed.push({ gid, side: m[1] as 'l' | 'r', tier: parseInt(m[2], 10), dOff: parseInt(m[3], 10) })
+    }
+    parsed.sort((a, b) => {
+      // Within a tier, fully fill one pod (outer-first) before moving to the other side.
+      // Top-down across tiers; left pod fills before right pod within the same tier.
+      // Outer rank 0 = outermost: left pod = lowest dOff, right pod = highest dOff.
+      const aRank = a.side === 'l' ? a.dOff : 4 - a.dOff
+      const bRank = b.side === 'l' ? b.dOff : 4 - b.dOff
+      if (a.tier !== b.tier) return a.tier - b.tier
+      if (a.side !== b.side) return a.side === 'l' ? -1 : 1
+      return aRank - bRank
+    })
+    this.revealQueue = parsed.map((p) => p.gid)
+  }
+
+  /** Reveal the next hidden desk in the queue. Returns its groupId or null if all are revealed. */
+  private revealNextDesk(): string | null {
+    for (const gid of this.revealQueue) {
+      if (!this.revealedDeskIds.has(gid)) {
+        this.revealedDeskIds.add(gid)
+        this.deskLastEmptyAt.delete(gid)
+        this.deskAnimations.set(gid, { type: 'reveal', startMs: performance.now() })
+        this.rebuildVisibleState()
+        return gid
+      }
+    }
+    return null
+  }
+
+  /** Begin hide animation for a revealed desk; the desk is removed from revealedDeskIds
+   *  once the animation completes (in tickDeskAnimations). Idempotent. */
+  private hideDesk(gid: string): void {
+    if (!this.revealedDeskIds.has(gid)) return
+    if (this.deskAnimations.get(gid)?.type === 'hide') return
+    this.deskAnimations.set(gid, { type: 'hide', startMs: performance.now() })
+    this.deskLastEmptyAt.delete(gid)
+  }
+
+  /** Compute the desk's center tile (col, row) by finding its 'desk'-type furniture. */
+  private getDeskCenter(gid: string): { col: number; row: number } | null {
+    for (const f of this.layout.furniture) {
+      if (this.deskGroupId(f.uid) !== gid) continue
+      if (f.type !== 'desk') continue
+      // Desk is a 2-wide footprint; center it.
+      return { col: f.col + 1, row: f.row + 1 }
+    }
+    return null
+  }
+
+  /** Snapshot of active portal rings for the renderer to draw on the floor. */
+  getPortalRings(nowMs: number): import('../types.js').PortalRing[] {
+    if (this.deskAnimations.size === 0) return []
+    const out: import('../types.js').PortalRing[] = []
+    for (const [gid, anim] of this.deskAnimations) {
+      const center = this.getDeskCenter(gid)
+      if (!center) continue
+      const dur = anim.type === 'reveal' ? OfficeState.REVEAL_ANIM_MS : OfficeState.HIDE_ANIM_MS
+      const t = Math.min(1, Math.max(0, (nowMs - anim.startMs) / dur))
+      // For reveal: ring expands and fades out (alpha 1→0, radius 4→24 px).
+      // For hide:   ring contracts (alpha 0.9→0, radius 24→4 px).
+      const radius = anim.type === 'reveal' ? 4 + 20 * t : 24 - 20 * t
+      const alpha = anim.type === 'reveal' ? 1 - t : 0.9 * (1 - t)
+      out.push({
+        cx: center.col * TILE_SIZE,
+        cy: (center.row + 0.4) * TILE_SIZE,
+        radius,
+        alpha,
+      })
+    }
+    return out
+  }
+
+  /** Per-frame: update animAlpha/animScale on furniture instances; finalize completed
+   *  hide animations by actually removing the desk from revealedDeskIds. */
+  private tickDeskAnimations(nowMs: number): void {
+    if (this.deskAnimations.size === 0) {
+      // Reset any animation overrides on furniture (cheap — only run while furniture has them).
+      for (const f of this.furniture) {
+        if (f.animAlpha !== undefined || f.animScale !== undefined) {
+          f.animAlpha = undefined
+          f.animScale = undefined
+        }
+      }
+      return
+    }
+    const completed: string[] = []
+    for (const [gid, anim] of this.deskAnimations) {
+      const dur = anim.type === 'reveal' ? OfficeState.REVEAL_ANIM_MS : OfficeState.HIDE_ANIM_MS
+      const elapsed = nowMs - anim.startMs
+      if (elapsed >= dur) {
+        completed.push(gid)
+      }
+    }
+    for (const gid of completed) {
+      const anim = this.deskAnimations.get(gid)!
+      this.deskAnimations.delete(gid)
+      if (anim.type === 'hide') {
+        this.revealedDeskIds.delete(gid)
+        this.deskLastEmptyAt.delete(gid)
+        this.rebuildVisibleState()
+      }
+    }
+    // Update per-instance anim props for any remaining animations.
+    for (const f of this.furniture) {
+      if (!f.groupId) {
+        f.animAlpha = undefined
+        f.animScale = undefined
+        continue
+      }
+      const anim = this.deskAnimations.get(f.groupId)
+      if (!anim) {
+        f.animAlpha = undefined
+        f.animScale = undefined
+        continue
+      }
+      const dur = anim.type === 'reveal' ? OfficeState.REVEAL_ANIM_MS : OfficeState.HIDE_ANIM_MS
+      const tRaw = Math.min(1, Math.max(0, (nowMs - anim.startMs) / dur))
+      // Ease-out for reveal so the desk pops in then settles. Linear ease for hide.
+      const t = anim.type === 'reveal' ? 1 - Math.pow(1 - tRaw, 2) : tRaw
+      f.animAlpha = anim.type === 'reveal' ? t : 1 - t
+      // Subtle scale: 0.6 → 1.0 on reveal, 1.0 → 0.6 on hide.
+      f.animScale = anim.type === 'reveal' ? 0.6 + 0.4 * t : 1 - 0.4 * t
+    }
+  }
+
+  /** Whether any seat belonging to this desk's chairs is currently assigned. */
+  private isDeskOccupied(gid: string): boolean {
+    for (const [seatUid, seat] of this.seats) {
+      if (!seat.assigned) continue
+      const chairUid = seatUid.split(':')[0]
+      if (this.deskGroupId(chairUid) === gid) return true
+    }
+    return false
+  }
+
+  /** Periodic check (throttled): hide any revealed desk that's been empty too long. */
+  private checkDespawnTimers(nowMs: number): void {
+    if (nowMs - this.lastDespawnCheckMs < OfficeState.DESPAWN_CHECK_INTERVAL_MS) return
+    this.lastDespawnCheckMs = nowMs
+    for (const gid of Array.from(this.revealedDeskIds)) {
+      if (this.isDeskOccupied(gid)) {
+        this.deskLastEmptyAt.delete(gid)
+        continue
+      }
+      const lastEmpty = this.deskLastEmptyAt.get(gid)
+      if (lastEmpty === undefined) {
+        this.deskLastEmptyAt.set(gid, nowMs)
+        continue
+      }
+      if (nowMs - lastEmpty >= OfficeState.DESK_DESPAWN_MS) {
+        this.hideDesk(gid)
+      }
+    }
   }
 
   /** Rebuild furniture instances with auto-state applied (active agents turn electronics ON) */
@@ -771,13 +1152,29 @@ export class OfficeState {
       }
     }
 
+    const visible = this.getVisibleFurniture()
+    const tagInstances = (instances: FurnitureInstance[]): FurnitureInstance[] => {
+      // Tag each instance with its desk groupId for animation lookup. Order is preserved
+      // by layoutToFurnitureInstances (it skips items without catalog entries — those map
+      // to no instance, so we walk both arrays in lockstep using a source index).
+      let srcIdx = 0
+      for (const inst of instances) {
+        // Advance srcIdx to the next item with a catalog entry (matches layoutToFurnitureInstances).
+        while (srcIdx < visible.length && !getCatalogEntry(visible[srcIdx].type)) srcIdx++
+        if (srcIdx >= visible.length) break
+        const gid = this.deskGroupId(visible[srcIdx].uid)
+        if (gid) inst.groupId = gid
+        srcIdx++
+      }
+      return instances
+    }
     if (autoOnTiles.size === 0) {
-      this.furniture = layoutToFurnitureInstances(this.layout.furniture)
+      this.furniture = tagInstances(layoutToFurnitureInstances(visible))
       return
     }
 
     // Build modified furniture list with auto-state applied
-    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
+    const modifiedFurniture: PlacedFurniture[] = visible.map((item) => {
       const entry = getCatalogEntry(item.type)
       if (!entry) return item
       // Check if any tile of this furniture overlaps an auto-on tile
@@ -795,7 +1192,7 @@ export class OfficeState {
       return item
     })
 
-    this.furniture = layoutToFurnitureInstances(modifiedFurniture)
+    this.furniture = tagInstances(layoutToFurnitureInstances(modifiedFurniture))
   }
 
   setAgentTool(id: number, tool: string | null): void {
@@ -887,8 +1284,8 @@ export class OfficeState {
     let bestDist = Infinity
     for (const f of this.layout.furniture) {
       let candidate: { col: number; row: number } | null = null
-      if (type === 'beanbag' && f.type === 'beanbag') {
-        // Beanbag is 1×1, character sits on it directly.
+      if (type === 'beanbag' && (f.type === 'beanbag' || f.type === 'pool_chair' || f.type === 'stump')) {
+        // Beanbag, pool chair, and stump are all 1×1 sittable surfaces.
         candidate = { col: f.col, row: f.row }
       } else if (type === 'bookshelf' && f.type === 'bookshelf') {
         // Bookshelf is 1×2 and blocked — stand on the floor tile directly in front of it.
@@ -921,10 +1318,27 @@ export class OfficeState {
     { col: 16, row: 25 },  // RIGHT player (faces LEFT toward the table)
   ]
 
-  /** The two chess player tiles, flanking the lounge chess set at cols 3-5, row 25. */
+  /** Chess player tiles — directly under the chess sprite's two chair seats so agents
+   *  visually sit IN the chairs. Chess set is at (3, 25) with sprite cols 4-13 (left chair)
+   *  and 34-43 (right chair); world tiles 3 and 5. Slot row is 26 (just below the
+   *  footprint), since the chair seats render in the lower half of the sprite. */
   private static readonly CHESS_SLOTS: Array<{ col: number; row: number }> = [
-    { col: 2, row: 25 },  // LEFT player (faces RIGHT toward the table)
-    { col: 6, row: 25 },  // RIGHT player (faces LEFT toward the table)
+    { col: 3, row: 26 },  // LEFT player — faces RIGHT toward the chess board
+    { col: 5, row: 26 },  // RIGHT player — faces LEFT toward the chess board
+  ]
+
+  /** Swimming pool — bottom-right of the lounge. Water rectangle spans cols 12-17 ×
+   *  rows 33-34. Agents stand at row 34 (the south edge) facing up, looking like they
+   *  swim within the pool. */
+  static readonly POOL_RECT = { col0: 12, row0: 33, col1: 17, row1: 34 } as const
+  /** Six swim slots along the pool's bottom row. */
+  private static readonly POOL_SLOTS: Array<{ col: number; row: number }> = [
+    { col: 12, row: 34 },
+    { col: 13, row: 34 },
+    { col: 14, row: 34 },
+    { col: 15, row: 34 },
+    { col: 16, row: 34 },
+    { col: 17, row: 34 },
   ]
 
   /** Pick the closest free ping-pong slot for the given character, or null if both are taken. */
@@ -982,6 +1396,152 @@ export class OfficeState {
     return false
   }
 
+  /** Find the ping-pong player whose slot matches the given side, or null. */
+  private getPingPongPlayer(side: 'left' | 'right'): Character | null {
+    const slot = side === 'left' ? OfficeState.PING_PONG_SLOTS[0] : OfficeState.PING_PONG_SLOTS[1]
+    for (const ch of this.characters.values()) {
+      if (ch.tripMode !== 'ping_pong') continue
+      if (!ch.tripTile) continue
+      if (ch.tripTile.col === slot.col && ch.tripTile.row === slot.row) return ch
+    }
+    return null
+  }
+
+  /** Whether a player has arrived at their ping-pong slot (vs still walking there). */
+  private isPlayerSeatedAtPingPong(ch: Character | null): boolean {
+    if (!ch || !ch.tripTile) return false
+    return ch.tileCol === ch.tripTile.col && ch.tileRow === ch.tripTile.row
+  }
+
+  /** Pick a non-greeter, non-trip, inactive character to swap into the loser's slot at game end. */
+  private findPingPongWaiter(excludeId: number): Character | null {
+    for (const ch of this.characters.values()) {
+      if (ch.id === excludeId) continue
+      if (ch.isGreeter || ch.isActive) continue
+      if (ch.tripMode === 'ping_pong' || ch.tripMode === 'chess') continue
+      if (ch.matrixEffect) continue
+      return ch
+    }
+    return null
+  }
+
+  /** Advance ping-pong match phases: idle → rallying → scoring → celebrating → repeat,
+   *  ending the match (and swapping the loser with a waiting agent) when a player hits
+   *  PP_SCORE_TO_WIN. Driven by performance.now() ms timestamps. */
+  private updatePingPongMatch(nowMs: number): void {
+    const left = this.getPingPongPlayer('left')
+    const right = this.getPingPongPlayer('right')
+    const bothSeated = this.isPlayerSeatedAtPingPong(left) && this.isPlayerSeatedAtPingPong(right)
+    if (!bothSeated) {
+      // No active match yet (or one player walking in). Don't start until both seated.
+      this.pingPongMatch = null
+      return
+    }
+    if (!this.pingPongMatch) {
+      this.pingPongMatch = {
+        leftScore: 0,
+        rightScore: 0,
+        phase: 'rallying',
+        phaseStartMs: nowMs,
+        pointDurationMs: OfficeState.PP_POINT_MIN_MS + Math.random() * (OfficeState.PP_POINT_MAX_MS - OfficeState.PP_POINT_MIN_MS),
+        lastPointWinner: null,
+      }
+      return
+    }
+    const m = this.pingPongMatch
+    const elapsed = nowMs - m.phaseStartMs
+    if (m.phase === 'rallying' && elapsed >= m.pointDurationMs) {
+      // Point ended — random winner.
+      const winner: 'left' | 'right' = Math.random() < 0.5 ? 'left' : 'right'
+      m.lastPointWinner = winner
+      if (winner === 'left') m.leftScore++
+      else m.rightScore++
+      m.phase = 'scoring'
+      m.phaseStartMs = nowMs
+      return
+    }
+    if (m.phase === 'scoring' && elapsed >= OfficeState.PP_SCORING_MS) {
+      m.phase = 'celebrating'
+      m.phaseStartMs = nowMs
+      return
+    }
+    if (m.phase === 'celebrating' && elapsed >= OfficeState.PP_CELEBRATING_MS) {
+      const gameOver =
+        m.leftScore >= OfficeState.PP_SCORE_TO_WIN || m.rightScore >= OfficeState.PP_SCORE_TO_WIN
+      if (!gameOver) {
+        m.phase = 'rallying'
+        m.phaseStartMs = nowMs
+        m.pointDurationMs = OfficeState.PP_POINT_MIN_MS + Math.random() * (OfficeState.PP_POINT_MAX_MS - OfficeState.PP_POINT_MIN_MS)
+        m.lastPointWinner = null
+        return
+      }
+      // Game over — swap loser with a waiting agent if one exists.
+      const winnerSide: 'left' | 'right' = m.leftScore > m.rightScore ? 'left' : 'right'
+      const loserSide: 'left' | 'right' = winnerSide === 'left' ? 'right' : 'left'
+      const loser = this.getPingPongPlayer(loserSide)
+      const waiter = loser ? this.findPingPongWaiter(loser.id) : null
+      if (loser) {
+        // Free their slot + send them home so the seat opens for the waiter.
+        this.endTrip(loser)
+      }
+      if (waiter) {
+        this.startTrip(waiter, 'ping_pong')
+      }
+      // Match cleared — next tick will rebuild when both slots are filled again (or wait).
+      this.pingPongMatch = null
+    }
+  }
+
+  /** Whether all four hero merge-to-main PCs have a sprite physically seated at them. */
+  private isAllHeroOccupied(): boolean {
+    let count = 0
+    for (const ch of this.characters.values()) {
+      if (!ch.seatId) continue
+      if (!ch.seatId.startsWith('hero-merge-chair-')) continue
+      const seat = this.seats.get(ch.seatId)
+      if (!seat) continue
+      if (ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) count++
+    }
+    return count >= 4
+  }
+
+  /** Lerp animals toward their current target — randomly-picked nearby tiles when idling,
+   *  or the watch position when all 4 hero PCs are occupied. They visibly hop around. */
+  private tickAnimals(dt: number, nowMs: number): void {
+    if (this.animals.length === 0) return
+    const watching = this.isAllHeroOccupied()
+    const lerpRate = Math.min(1, dt * 2.4)
+    for (let i = 0; i < this.animals.length; i++) {
+      const a = this.animals[i]
+      let tx: number
+      let ty: number
+      if (watching) {
+        tx = a.watchX
+        ty = a.watchY
+        // Push next random hop slightly into the future so they don't bolt away the
+        // instant the merge ends.
+        a.nextHopAt = nowMs + 600
+      } else {
+        // Pick a new random target every so often (or when we've reached the current one).
+        const reached = Math.abs(a.targetX - a.x) < 1 && Math.abs(a.targetY - a.y) < 1
+        if (nowMs >= a.nextHopAt || reached) {
+          const r = OfficeState.ANIMAL_HOP_RADIUS_PX
+          a.targetX = a.homeX + (Math.random() - 0.5) * r * 2
+          a.targetY = a.homeY + (Math.random() - 0.5) * r * 2
+          const span = OfficeState.ANIMAL_HOP_MAX_MS - OfficeState.ANIMAL_HOP_MIN_MS
+          a.nextHopAt = nowMs + OfficeState.ANIMAL_HOP_MIN_MS + Math.random() * span
+        }
+        tx = a.targetX
+        ty = a.targetY
+      }
+      const dx = tx - a.x
+      const dy = ty - a.y
+      a.x += dx * lerpRate
+      a.y += dy * lerpRate
+      if (Math.abs(dx) > 0.4) a.facing = dx > 0 ? 'right' : 'left'
+    }
+  }
+
   /** True when this idle agent has a partner available and at least one chess slot is free. */
   private canStartChess(ch: Character): boolean {
     const slot = this.findFreeChessSlot(ch)
@@ -994,8 +1554,59 @@ export class OfficeState {
     return false
   }
 
+  /** Pick the closest free pool slot for the given character, or null if all are taken. */
+  private findFreePoolSlot(ch: Character): { col: number; row: number } | null {
+    let best: { col: number; row: number } | null = null
+    let bestDist = Infinity
+    for (const s of OfficeState.POOL_SLOTS) {
+      const key = `${s.col},${s.row}`
+      const isMyOwnSlot = ch.tripTile && ch.tripTile.col === s.col && ch.tripTile.row === s.row
+      if (this.occupiedTripTiles.has(key) && !isMyOwnSlot) continue
+      const tile = this.tileMap[s.row]?.[s.col]
+      if (tile === undefined) continue
+      if (this.blockedTiles.has(key) && !isMyOwnSlot) continue
+      const dist = Math.abs(s.col - ch.tileCol) + Math.abs(s.row - ch.tileRow)
+      if (dist < bestDist) {
+        best = s
+        bestDist = dist
+      }
+    }
+    return best
+  }
+
+  /** Pool needs no partner — solo swimming is fine. */
+  private canStartPool(ch: Character): boolean {
+    return this.findFreePoolSlot(ch) !== null
+  }
+
+  /** Pick a random grass tile (h===95 in tileColors) that is walkable, not blocked,
+   *  not already planted, and not claimed by another planter. Returns null on no
+   *  candidates. */
+  private findFreePlantingTile(ch: Character): { col: number; row: number } | null {
+    const cols = this.layout.cols
+    const rows = this.layout.rows
+    const tileColors = this.layout.tileColors
+    if (!tileColors) return null
+    // Sample up to 24 random tiles. Cheap and tends to find one quickly.
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const c = Math.floor(Math.random() * cols)
+      const r = Math.floor(Math.random() * rows)
+      const tc = tileColors[r * cols + c]
+      if (!tc || tc.h !== 95) continue  // grass only
+      const key = `${c},${r}`
+      if (this.blockedTiles.has(key)) continue
+      if (this.claimedPlantTiles.has(key)) continue
+      if (this.plantedFlowers.has(key)) continue
+      // Reachable check: pathfind from agent's position.
+      const path = findPath(ch.tileCol, ch.tileRow, c, r, this.tileMap, this.blockedTiles)
+      if (path.length === 0 && !(ch.tileCol === c && ch.tileRow === r)) continue
+      return { col: c, row: r }
+    }
+    return null
+  }
+
   /** Begin walking the agent toward a trip target. Returns true if a path was found. */
-  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess'): boolean {
+  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting'): boolean {
     let target: { col: number; row: number } | null
     if (type === 'pacing') {
       target = this.pickPacingTile(ch.tileCol, ch.tileRow)
@@ -1003,6 +1614,13 @@ export class OfficeState {
       target = this.findFreePingPongSlot(ch)
     } else if (type === 'chess') {
       target = this.findFreeChessSlot(ch)
+    } else if (type === 'pool') {
+      target = this.findFreePoolSlot(ch)
+    } else if (type === 'planting') {
+      target = this.findFreePlantingTile(ch)
+      if (target) {
+        this.claimedPlantTiles.add(`${target.col},${target.row}`)
+      }
     } else {
       target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
     }
@@ -1087,23 +1705,245 @@ export class OfficeState {
   }
 
   /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | null {
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | null {
     if (!ch.isActive) {
-      // Already at a chess slot? Stay there as long as a partner exists, otherwise drift away.
-      if (ch.tripMode === 'chess') {
-        return this.hasIdlePartner(ch) ? 'chess' : 'beanbag'
-      }
-      // Already at a ping-pong slot? Stay there as long as a partner exists, otherwise drift away.
-      if (ch.tripMode === 'ping_pong') {
-        return this.hasIdlePartner(ch) ? 'ping_pong' : 'beanbag'
-      }
-      // Prefer ping-pong first (existing behavior), then chess, then beanbag.
+      // Stay committed to in-flight planting until the timer runs out below.
+      if (ch.tripMode === 'planting') return 'planting'
+      // Just finished work? Detour through the meadow to plant a flower first.
+      if (this.pendingPlant.has(ch.id)) return 'planting'
+      // Already committed to a chess/ping-pong/pool slot? Stay — don't flap if a partner's
+      // isActive bit briefly toggles during a tool call. The slot is reserved either way.
+      if (ch.tripMode === 'chess' && ch.tripTile) return 'chess'
+      if (ch.tripMode === 'ping_pong' && ch.tripTile) return 'ping_pong'
+      if (ch.tripMode === 'pool') return 'pool'
+      // Not yet at a slot — fall through to fresh selection.
+      // Prefer 2-player activities first, then pool (6 slots), then beanbag.
       if (this.canStartPingPong(ch)) return 'ping_pong'
       if (this.canStartChess(ch)) return 'chess'
+      if (this.canStartPool(ch)) return 'pool'
       return 'beanbag'
     }
     if (ch.lastNoToolTime === null && isReadingTool(ch.currentTool)) return 'bookshelf'
     return null  // No pacing — compact layout has no inter-pod aisles
+  }
+
+  /** Pick a random walkable tile inside the knight's wander box for him to roam to. */
+  private pickKnightWanderTile(): { col: number; row: number } | null {
+    const tries = 8
+    for (let i = 0; i < tries; i++) {
+      const c = OfficeState.KNIGHT_WANDER_MIN_COL +
+        Math.floor(Math.random() * (OfficeState.KNIGHT_WANDER_MAX_COL - OfficeState.KNIGHT_WANDER_MIN_COL + 1))
+      const r = OfficeState.KNIGHT_WANDER_MIN_ROW +
+        Math.floor(Math.random() * (OfficeState.KNIGHT_WANDER_MAX_ROW - OfficeState.KNIGHT_WANDER_MIN_ROW + 1))
+      const key = `${c},${r}`
+      if (this.blockedTiles.has(key)) continue
+      const tile = this.tileMap[r]?.[c]
+      if (tile === undefined || tile === TileType.WALL || tile === TileType.VOID) continue
+      return { col: c, row: r }
+    }
+    return null
+  }
+
+  /** Pathfind the knight from his current tile to a target, returning true if a path was found. */
+  private knightWalkTo(ch: Character, target: { col: number; row: number }): boolean {
+    if (ch.tileCol === target.col && ch.tileRow === target.row) {
+      ch.path = []
+      ch.state = CharacterState.IDLE
+      return true
+    }
+    const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, this.tileMap, this.blockedTiles)
+    if (path.length === 0) return false
+    ch.path = path
+    ch.moveProgress = 0
+    ch.state = CharacterState.WALK
+    ch.frame = 0
+    ch.frameTimer = 0
+    return true
+  }
+
+  /** Find a walkable tile adjacent to the given character (4-neighbours), preferring the
+   *  tile to their immediate south/north. Used when the knight needs to stand next to an
+   *  agent to perform the ceremony. */
+  private findTileAdjacentTo(target: Character): { col: number; row: number } | null {
+    const candidates: Array<{ col: number; row: number }> = [
+      { col: target.tileCol, row: target.tileRow + 1 },
+      { col: target.tileCol, row: target.tileRow - 1 },
+      { col: target.tileCol - 1, row: target.tileRow },
+      { col: target.tileCol + 1, row: target.tileRow },
+    ]
+    for (const c of candidates) {
+      const key = `${c.col},${c.row}`
+      if (this.blockedTiles.has(key)) continue
+      const tile = this.tileMap[c.row]?.[c.col]
+      if (tile === undefined || tile === TileType.WALL || tile === TileType.VOID) continue
+      return c
+    }
+    return null
+  }
+
+  /** Knight finite-state machine. Called once per frame from update() while ch.isKnight. */
+  private tickKnight(ch: Character, dt: number, nowMs: number): void {
+    // Always run base movement so walk paths progress.
+    updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
+
+    // Sweep stale queue entries — free any agent who's been waiting too long.
+    if (this.knightingQueue.length > 0) {
+      this.knightingQueue = this.knightingQueue.filter((id) => {
+        const queuedAt = this.knightingQueueTimes.get(id) ?? nowMs
+        if (nowMs - queuedAt > OfficeState.KNIGHT_QUEUE_TIMEOUT_MS) {
+          this.knightingQueueTimes.delete(id)
+          const stale = this.characters.get(id)
+          if (stale) stale.isAwaitingKnight = false
+          return false
+        }
+        return true
+      })
+    }
+
+    const elapsed = nowMs - (ch.knightStateStartMs ?? nowMs)
+    const phase = ch.knightState ?? 'home'
+
+    // Transition once an agent is queued for knighting (interrupts wander/home dwelling).
+    if ((phase === 'home' || phase === 'wander' || phase === 'returning') && this.knightingQueue.length > 0) {
+      const targetId = this.knightingQueue[0]
+      const target = this.characters.get(targetId)
+      if (!target || target.matrixEffect === 'despawn' || !target.isAwaitingKnight) {
+        // Stale entry — drop it.
+        this.knightingQueue.shift()
+        if (target) target.isAwaitingKnight = false
+        return
+      }
+      const adj = this.findTileAdjacentTo(target)
+      if (adj && this.knightWalkTo(ch, adj)) {
+        ch.knightState = 'going'
+        ch.knightStateStartMs = nowMs
+        ch.knightAgentId = targetId
+        return
+      }
+      // Couldn't reach — drop and free the agent.
+      this.knightingQueue.shift()
+      this.knightingQueueTimes.delete(targetId)
+      target.isAwaitingKnight = false
+      return
+    }
+
+    if (phase === 'home') {
+      // Stand at the post for KNIGHT_HOME_DWELL_MS, then maybe wander.
+      if (elapsed >= OfficeState.KNIGHT_HOME_DWELL_MS) {
+        const wander = this.pickKnightWanderTile()
+        if (wander && this.knightWalkTo(ch, wander)) {
+          ch.knightState = 'wander'
+          ch.knightStateStartMs = nowMs
+        } else {
+          ch.knightStateStartMs = nowMs // try again later
+        }
+      }
+      return
+    }
+
+    if (phase === 'wander') {
+      // While walking, just wait. After arrival (state IDLE) dwell briefly, then return home.
+      if (ch.state === CharacterState.IDLE) {
+        if (elapsed >= OfficeState.KNIGHT_WANDER_DWELL_MS + 300) {
+          const home = { col: OfficeState.KNIGHT_HOME_COL, row: OfficeState.KNIGHT_HOME_ROW }
+          if (this.knightWalkTo(ch, home)) {
+            ch.knightState = 'returning'
+            ch.knightStateStartMs = nowMs
+          }
+        }
+      }
+      return
+    }
+
+    if (phase === 'returning') {
+      if (ch.state === CharacterState.IDLE && ch.tileCol === OfficeState.KNIGHT_HOME_COL && ch.tileRow === OfficeState.KNIGHT_HOME_ROW) {
+        ch.dir = Direction.DOWN
+        ch.knightState = 'home'
+        ch.knightStateStartMs = nowMs
+      }
+      return
+    }
+
+    if (phase === 'going') {
+      const target = ch.knightAgentId !== null && ch.knightAgentId !== undefined
+        ? this.characters.get(ch.knightAgentId) ?? null
+        : null
+      if (!target || target.matrixEffect === 'despawn') {
+        if (target) target.isAwaitingKnight = false
+        if (ch.knightAgentId !== null && ch.knightAgentId !== undefined) {
+          const idx = this.knightingQueue.indexOf(ch.knightAgentId)
+          if (idx >= 0) this.knightingQueue.splice(idx, 1)
+          this.knightingQueueTimes.delete(ch.knightAgentId)
+        }
+        ch.knightAgentId = null
+        ch.knightState = 'returning'
+        ch.knightStateStartMs = nowMs
+        const home = { col: OfficeState.KNIGHT_HOME_COL, row: OfficeState.KNIGHT_HOME_ROW }
+        this.knightWalkTo(ch, home)
+        return
+      }
+      // If the knight is right next to the agent, start ceremony immediately even if mid-walk.
+      const adjacent =
+        Math.abs(target.tileCol - ch.tileCol) + Math.abs(target.tileRow - ch.tileRow) === 1
+      if (adjacent) {
+        if (target.tileCol > ch.tileCol) ch.dir = Direction.RIGHT
+        else if (target.tileCol < ch.tileCol) ch.dir = Direction.LEFT
+        else if (target.tileRow > ch.tileRow) ch.dir = Direction.DOWN
+        else ch.dir = Direction.UP
+        ch.path = []
+        ch.knightState = 'ceremony'
+        ch.knightStateStartMs = nowMs
+        target.isAwaitingKnight = false
+        const idx = this.knightingQueue.indexOf(target.id)
+        if (idx >= 0) this.knightingQueue.splice(idx, 1)
+        this.knightingQueueTimes.delete(target.id)
+        return
+      }
+      // Re-path if the agent has moved away from the destination we were heading toward
+      // (or if our path has finished without reaching them).
+      const arrived = ch.state === CharacterState.IDLE
+      const lastTile = ch.path.length > 0 ? ch.path[ch.path.length - 1] : null
+      const targetAdjMoved = lastTile
+        ? Math.abs(target.tileCol - lastTile.col) + Math.abs(target.tileRow - lastTile.row) > 1
+        : true
+      if (arrived || targetAdjMoved) {
+        const adj = this.findTileAdjacentTo(target)
+        if (!adj || !this.knightWalkTo(ch, adj)) {
+          // Can't reach — give up on this agent.
+          target.isAwaitingKnight = false
+          ch.knightAgentId = null
+          ch.knightState = 'returning'
+          ch.knightStateStartMs = nowMs
+          const home = { col: OfficeState.KNIGHT_HOME_COL, row: OfficeState.KNIGHT_HOME_ROW }
+          this.knightWalkTo(ch, home)
+        }
+      }
+      return
+    }
+
+    if (phase === 'ceremony') {
+      const target = ch.knightAgentId !== null && ch.knightAgentId !== undefined
+        ? this.characters.get(ch.knightAgentId) ?? null
+        : null
+      if (!target) {
+        ch.knightState = 'returning'
+        ch.knightStateStartMs = nowMs
+        ch.knightAgentId = null
+        return
+      }
+      if (elapsed >= OfficeState.KNIGHT_CEREMONY_MS) {
+        target.isBeingKnighted = false
+        ch.knightAgentId = null
+        const home = { col: OfficeState.KNIGHT_HOME_COL, row: OfficeState.KNIGHT_HOME_ROW }
+        if (this.knightWalkTo(ch, home)) {
+          ch.knightState = 'returning'
+        } else {
+          ch.knightState = 'home'
+        }
+        ch.knightStateStartMs = nowMs
+      }
+      return
+    }
   }
 
   /** True if there is at least one OTHER inactive non-greeter agent. Used to decide whether to keep playing. */
@@ -1126,6 +1966,11 @@ export class OfficeState {
       this.materializeAgent(next)
       this.spawnInProgressUntil = nowMs + OfficeState.SPAWN_INTERVAL_MS
     }
+
+    this.checkDespawnTimers(nowMs)
+    this.tickDeskAnimations(nowMs)
+    this.updatePingPongMatch(nowMs)
+    this.tickAnimals(dt, nowMs)
 
     const toDelete: number[] = []
     for (const ch of this.characters.values()) {
@@ -1194,6 +2039,13 @@ export class OfficeState {
         continue
       }
 
+      // Knight NPC: own FSM (home / wander / going / ceremony / returning). Uses the same
+      // pathfinding + walk machinery as agents but with its own driving logic.
+      if (ch.isKnight) {
+        this.tickKnight(ch, dt, nowMs)
+        continue
+      }
+
       // SPAWNING agents: pin position based on hug stage, then tick state machine.
       if (ch.state === CharacterState.SPAWNING) {
         const padX = OfficeState.PAD_COL * TILE_SIZE + TILE_SIZE / 2
@@ -1236,6 +2088,31 @@ export class OfficeState {
             ch.tripMode = null
           }
           this.startTrip(ch, desired)
+        }
+      }
+
+      // Planting: tick down once arrived at the planting tile. When the timer reaches 0,
+      // commit a flower at that tile, free the claim, and end the trip so desiredTripFor
+      // routes the agent on to their normal idle activity.
+      if (
+        ch.tripMode === 'planting' &&
+        ch.tripTile &&
+        ch.tileCol === ch.tripTile.col &&
+        ch.tileRow === ch.tripTile.row
+      ) {
+        if (ch.plantingTimer === undefined) {
+          ch.plantingTimer = OfficeState.PLANTING_DURATION_MS
+        }
+        ch.plantingTimer -= dt * 1000
+        if (ch.plantingTimer <= 0) {
+          const key = `${ch.tripTile.col},${ch.tripTile.row}`
+          const colors = OfficeState.PLANTABLE_FLOWER_COLORS
+          const color = colors[Math.floor(Math.random() * colors.length)]
+          this.plantedFlowers.set(key, color)
+          this.claimedPlantTiles.delete(key)
+          this.pendingPlant.delete(ch.id)
+          ch.plantingTimer = undefined
+          this.endTrip(ch)
         }
       }
 

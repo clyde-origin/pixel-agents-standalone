@@ -376,6 +376,246 @@ export const PING_PONG_TABLE_SPRITE: SpriteData = (() => {
 /** Chess set: 48x24 (3 tiles wide × 1.5 tile tall visual; 3×1 footprint).
  *  Two tall ornate high-back chairs flank a checkered chess table with pieces.
  *  Chair backs extend upward into the row above the footprint (like bookshelf 1×2). */
+// ── Knight sprite set (4 directions + ceremony) ─────────────────
+// All 16w × 24h. Anchored at sprite bottom-center like normal characters.
+// Color palette shared across all knight sprites.
+const KNIGHT_A = '#c0c5cc'  // armor light
+const KNIGHT_B = '#9098a3'  // armor mid
+const KNIGHT_D = '#5a606b'  // armor dark / shadow
+const KNIGHT_H = '#2e3138'  // very dark (boots)
+const KNIGHT_V = '#0e1014'  // visor slit
+const KNIGHT_R = '#c53030'  // shield red / cape
+const KNIGHT_W = '#ffffff'  // shield white cross
+const KNIGHT_S = '#e8ecf0'  // sword blade
+const KNIGHT_Y = '#d4a834'  // sword guard gold
+const KNIGHT_G = '#5a3820'  // sword grip
+
+/** Front view — knight facing south (toward viewer). Sword raised in right hand,
+ *  red kite shield with white cross in left. Default standing pose. */
+export const KNIGHT_DOWN_SPRITE: SpriteData = (() => {
+  const A = KNIGHT_A, B = KNIGHT_B, D = KNIGHT_D, H = KNIGHT_H, V = KNIGHT_V
+  const R = KNIGHT_R, W = KNIGHT_W, S = KNIGHT_S, Y = KNIGHT_Y, G = KNIGHT_G
+  return [
+    [_, _, _, _, _, _, _, A, A, _, _, _, _, _, _, _],
+    [_, _, _, _, _, A, B, B, B, B, A, _, _, _, _, _],
+    [_, _, _, _, A, B, B, A, A, B, B, A, _, _, _, _],
+    [_, _, _, A, B, B, A, A, A, A, B, B, A, _, _, _],
+    [_, _, A, B, B, A, A, A, A, A, A, B, B, A, _, _],
+    [_, _, A, B, V, V, V, V, V, V, V, V, B, A, _, _],
+    [_, _, A, B, B, A, A, A, A, A, A, B, B, A, _, _],
+    [_, _, _, A, B, B, A, A, A, A, B, B, A, _, _, _],
+    [_, _, _, _, A, B, A, A, A, A, B, A, _, _, _, _],
+    [_, _, _, _, _, D, A, A, A, A, D, _, _, _, _, _],
+    [_, _, _, A, A, A, B, B, B, B, A, A, A, _, _, _],
+    [_, _, R, R, A, B, B, B, B, B, B, A, S, _, _, _],
+    [_, R, R, W, R, B, B, B, B, B, B, A, S, _, _, _],
+    [_, R, W, W, W, B, B, B, B, B, B, A, G, _, _, _],
+    [_, R, R, W, R, B, B, B, B, B, B, A, G, _, _, _],
+    [_, R, R, R, R, B, B, B, B, B, B, Y, Y, Y, _, _],
+    [_, _, R, R, R, B, B, B, B, B, B, _, S, _, _, _],
+    [_, _, _, R, R, A, B, B, B, B, A, _, S, _, _, _],
+    [_, _, _, _, D, A, A, A, A, A, A, _, S, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, S, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, S, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, H, H, H, _, H, H, H, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Back view — knight facing north. No visor on the back of the helmet; a red cape
+ *  trails down the back; sword visible above his right shoulder (viewer's left). */
+export const KNIGHT_UP_SPRITE: SpriteData = (() => {
+  const A = KNIGHT_A, B = KNIGHT_B, D = KNIGHT_D, H = KNIGHT_H
+  const R = KNIGHT_R, S = KNIGHT_S, G = KNIGHT_G
+  return [
+    [_, _, _, _, _, _, _, A, A, _, _, _, _, _, _, _],
+    [_, _, _, _, _, A, B, B, B, B, A, _, _, _, _, _],
+    [_, _, _, _, A, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, _, A, B, B, B, B, B, B, B, B, A, _, _, _],
+    [_, _, A, B, B, B, B, B, B, B, B, B, B, A, _, _],
+    [_, _, A, B, B, B, B, B, B, B, B, B, B, A, _, _],
+    [_, _, A, B, B, B, B, B, B, B, B, B, B, A, _, _],
+    [_, _, _, A, B, B, B, B, B, B, B, B, A, _, _, _],
+    [_, _, _, _, A, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, _, _, _, D, A, A, A, A, D, _, _, _, _, _],
+    [_, _, _, A, A, A, B, B, B, B, A, A, A, _, _, _],
+    [_, _, S, _, A, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, S, _, A, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, G, _, A, R, R, R, R, R, R, A, _, _, _, _],
+    [_, _, G, _, A, R, R, R, R, R, R, A, _, _, _, _],
+    [_, _, _, _, A, R, R, R, R, R, R, A, _, _, _, _],
+    [_, _, _, _, A, R, R, R, R, R, R, A, _, _, _, _],
+    [_, _, _, _, A, R, R, R, R, R, R, A, _, _, _, _],
+    [_, _, _, _, D, R, R, R, R, R, R, D, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, H, H, H, _, H, H, H, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Side view, knight facing west (LEFT). Helmet profile, sword raised behind body,
+ *  red kite shield in front of his torso (viewer can see its rim). */
+export const KNIGHT_LEFT_SPRITE: SpriteData = (() => {
+  const A = KNIGHT_A, B = KNIGHT_B, D = KNIGHT_D, H = KNIGHT_H, V = KNIGHT_V
+  const R = KNIGHT_R, W = KNIGHT_W, S = KNIGHT_S, Y = KNIGHT_Y, G = KNIGHT_G
+  return [
+    [_, _, _, _, _, _, A, A, _, _, _, _, _, _, _, _],
+    [_, _, _, _, A, B, B, B, B, A, _, _, _, _, _, _],
+    [_, _, _, A, B, B, A, A, B, B, A, _, _, _, _, _],
+    [_, _, A, B, B, A, A, A, A, B, B, A, _, _, _, _],
+    [_, A, B, B, A, A, A, A, A, A, B, B, A, _, _, _],
+    [_, A, V, V, V, V, B, B, B, B, B, B, A, _, _, _],
+    [_, A, B, B, A, A, A, A, A, A, B, B, A, _, _, _],
+    [_, _, A, B, B, A, A, A, A, B, B, A, _, _, _, _],
+    [_, _, _, A, B, A, A, A, A, B, A, _, _, _, _, _],
+    [_, _, _, _, D, A, A, A, A, D, _, S, _, _, _, _],
+    [_, _, A, A, A, B, B, B, B, A, A, S, _, _, _, _],
+    [_, _, R, A, B, B, B, B, B, B, A, S, _, _, _, _],
+    [_, R, R, A, B, B, B, B, B, B, A, G, _, _, _, _],
+    [_, R, W, A, B, B, B, B, B, B, A, G, _, _, _, _],
+    [_, R, R, A, B, B, B, B, B, B, Y, Y, Y, _, _, _],
+    [_, R, R, A, B, B, B, B, B, B, A, S, _, _, _, _],
+    [_, _, R, A, B, B, B, B, B, B, A, S, _, _, _, _],
+    [_, _, _, A, A, B, B, B, B, A, A, _, _, _, _, _],
+    [_, _, _, _, D, A, A, A, A, A, _, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, _, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, _, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, _, _, _, _, _, _],
+    [_, _, _, _, H, H, H, _, H, H, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Side view, knight facing east (RIGHT). Mirror of LEFT. */
+export const KNIGHT_RIGHT_SPRITE: SpriteData = (() => {
+  // Mirror each row of the LEFT sprite.
+  return KNIGHT_LEFT_SPRITE.map((row) => [...row].reverse())
+})()
+
+/** Knighting ceremony — sword extended horizontally to the south (toward the agent
+ *  being knighted), like he's tapping their shoulder. Front view body, sword pointing
+ *  down-and-out across the lower right of the sprite. */
+export const KNIGHT_CEREMONY_SPRITE: SpriteData = (() => {
+  const A = KNIGHT_A, B = KNIGHT_B, D = KNIGHT_D, H = KNIGHT_H, V = KNIGHT_V
+  const R = KNIGHT_R, W = KNIGHT_W, S = KNIGHT_S, Y = KNIGHT_Y, G = KNIGHT_G
+  return [
+    [_, _, _, _, _, _, _, A, A, _, _, _, _, _, _, _],
+    [_, _, _, _, _, A, B, B, B, B, A, _, _, _, _, _],
+    [_, _, _, _, A, B, B, A, A, B, B, A, _, _, _, _],
+    [_, _, _, A, B, B, A, A, A, A, B, B, A, _, _, _],
+    [_, _, A, B, B, A, A, A, A, A, A, B, B, A, _, _],
+    [_, _, A, B, V, V, V, V, V, V, V, V, B, A, _, _],
+    [_, _, A, B, B, A, A, A, A, A, A, B, B, A, _, _],
+    [_, _, _, A, B, B, A, A, A, A, B, B, A, _, _, _],
+    [_, _, _, _, A, B, A, A, A, A, B, A, _, _, _, _],
+    [_, _, _, _, _, D, A, A, A, A, D, _, _, _, _, _],
+    [_, _, _, A, A, A, B, B, B, B, A, A, A, _, _, _],
+    [_, _, R, R, A, B, B, B, B, B, B, A, A, _, _, _],
+    [_, R, R, W, R, B, B, B, B, B, B, A, Y, Y, Y, _],   // crossguard extended outward
+    [_, R, W, W, W, B, B, B, B, B, B, A, _, S, S, S],   // sword blade — horizontal, pointing right (south after rotation)
+    [_, R, R, W, R, B, B, B, B, B, B, A, _, _, _, _],
+    [_, R, R, R, R, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, R, R, R, B, B, B, B, B, B, A, _, _, _, _],
+    [_, _, _, R, R, A, B, B, B, B, A, _, _, _, _, _],
+    [_, _, _, _, D, A, A, A, A, A, A, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, A, A, A, _, A, A, A, _, _, _, _, _],
+    [_, _, _, _, H, H, H, _, H, H, H, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Backwards-compat alias — the original single sprite. */
+export const KNIGHT_SPRITE = KNIGHT_DOWN_SPRITE
+
+/** Tree stump — top-down round wood disc with growth rings. 16×16, 1 tile,
+ *  sittable like a beanbag. */
+export const STUMP_SPRITE: SpriteData = (() => {
+  const D = '#3a2410'  // dark bark
+  const M = '#5a3820'  // mid wood
+  const W = '#8c5a32'  // light wood
+  const R = '#a07248'  // ring highlight
+  return [
+    [_, _, _, _, D, D, D, D, D, D, _, _, _, _, _, _],
+    [_, _, _, D, M, M, M, M, M, M, D, _, _, _, _, _],
+    [_, _, D, M, W, W, W, W, W, W, M, D, _, _, _, _],
+    [_, _, D, M, W, R, R, R, R, W, M, D, _, _, _, _],
+    [_, D, M, W, R, W, W, W, W, R, W, M, D, _, _, _],
+    [_, D, M, W, R, W, R, R, W, R, W, M, D, _, _, _],
+    [_, D, M, W, R, W, R, R, W, R, W, M, D, _, _, _],
+    [_, D, M, W, R, W, W, W, W, R, W, M, D, _, _, _],
+    [_, _, D, M, W, R, R, R, R, W, M, D, _, _, _, _],
+    [_, _, D, M, W, W, W, W, W, W, M, D, _, _, _, _],
+    [_, _, _, D, M, M, M, M, M, M, D, _, _, _, _, _],
+    [_, _, _, _, D, D, D, D, D, D, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Campfire — stone ring with crossed logs and glowing embers. Animated flames are
+ *  drawn separately as a procedural overlay (renderer.ts → renderCampfireFlames). */
+export const CAMPFIRE_SPRITE: SpriteData = (() => {
+  const S = '#7a7a82'  // stone gray
+  const D = '#3a2410'  // dark wood / shadow
+  const L = '#5a3820'  // log brown
+  const M = '#8c5a32'  // log highlight
+  const E = '#ff6020'  // ember
+  const O = '#ffa040'  // bright fire core
+  return [
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, S, S, S, S, S, S, _, _, _, _, _, _],
+    [_, _, _, S, S, S, S, S, S, S, S, _, _, _, _, _],
+    [_, _, S, S, L, L, L, L, L, L, S, S, _, _, _, _],
+    [_, _, S, L, M, L, M, L, M, L, L, S, _, _, _, _],
+    [_, _, S, L, M, E, E, E, E, M, L, S, _, _, _, _],
+    [_, _, S, L, M, E, O, O, E, M, L, S, _, _, _, _],
+    [_, _, S, L, M, E, E, E, E, M, L, S, _, _, _, _],
+    [_, _, S, L, M, L, M, L, M, L, L, S, _, _, _, _],
+    [_, _, S, S, L, L, L, L, L, L, S, S, _, _, _, _],
+    [_, _, _, S, S, S, S, S, S, S, S, _, _, _, _, _],
+    [_, _, _, _, S, S, S, S, S, S, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
+/** Pool chair (sun lounger), top-down view. 16x16 — 1 tile. White cushion with teal stripes,
+ *  pillow at the head end (top), dark frame edges. Footprint is the single tile the chair
+ *  occupies; agents stand on it like a beanbag. */
+export const POOL_CHAIR_SPRITE: SpriteData = (() => {
+  const F = '#3a4a55' // frame (dark)
+  const W = '#f0f0e8' // cushion white
+  const P = '#fafaf2' // pillow (slightly brighter)
+  const S = '#3aa8c0' // stripe (teal)
+  return [
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, F, F, F, F, F, F, F, F, F, F, F, F, F, F, _],
+    [_, F, P, P, P, P, P, P, P, P, P, P, P, P, F, _],
+    [_, F, P, P, P, P, P, P, P, P, P, P, P, P, F, _],
+    [_, F, P, P, P, P, P, P, P, P, P, P, P, P, F, _],
+    [_, F, F, F, F, F, F, F, F, F, F, F, F, F, F, _],
+    [_, F, W, W, W, W, W, W, W, W, W, W, W, W, F, _],
+    [_, F, S, S, S, S, S, S, S, S, S, S, S, S, F, _],
+    [_, F, W, W, W, W, W, W, W, W, W, W, W, W, F, _],
+    [_, F, W, W, W, W, W, W, W, W, W, W, W, W, F, _],
+    [_, F, S, S, S, S, S, S, S, S, S, S, S, S, F, _],
+    [_, F, W, W, W, W, W, W, W, W, W, W, W, W, F, _],
+    [_, F, W, W, W, W, W, W, W, W, W, W, W, W, F, _],
+    [_, F, F, F, F, F, F, F, F, F, F, F, F, F, F, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+    [_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _],
+  ]
+})()
+
 export const CHESS_SET_SPRITE: SpriteData = (() => {
   const W = '#5a3a1c' // dark wood (chair back, table)
   const M = '#8a5a2c' // medium wood (seat cushion, table top edge)

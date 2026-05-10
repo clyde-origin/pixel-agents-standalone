@@ -21,10 +21,18 @@ export function startGameLoop(
     const dt = lastTime === 0 ? 0 : Math.min((time - lastTime) / 1000, MAX_DELTA_TIME_SEC)
     lastTime = time
 
-    callbacks.update(dt)
+    try {
+      callbacks.update(dt)
+    } catch (e) {
+      console.error('[gameLoop] update threw:', e)
+    }
 
-    ctx.imageSmoothingEnabled = false
-    callbacks.render(ctx)
+    try {
+      ctx.imageSmoothingEnabled = false
+      callbacks.render(ctx)
+    } catch (e) {
+      console.error('[gameLoop] render threw:', e)
+    }
 
     rafId = requestAnimationFrame(frame)
   }

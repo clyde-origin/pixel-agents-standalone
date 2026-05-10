@@ -13,6 +13,10 @@ import {
   COFFEE_TABLE_SPRITE,
   PING_PONG_TABLE_SPRITE,
   CHESS_SET_SPRITE,
+  POOL_CHAIR_SPRITE,
+  KNIGHT_DOWN_SPRITE,
+  STUMP_SPRITE,
+  CAMPFIRE_SPRITE,
 } from '../sprites/spriteData.js'
 
 export interface LoadedAssetData {
@@ -55,6 +59,10 @@ export const FURNITURE_CATALOG: CatalogEntryWithCategory[] = [
   { type: FurnitureType.COFFEE_TABLE,label:'Coffee Table',footprintW: 1, footprintH: 1, sprite: COFFEE_TABLE_SPRITE, isDesk: false, category: 'decor' },
   { type: FurnitureType.PING_PONG_TABLE, label: 'Ping Pong Table', footprintW: 3, footprintH: 1, sprite: PING_PONG_TABLE_SPRITE, isDesk: false, category: 'misc' },
   { type: FurnitureType.CHESS_SET, label: 'Chess Set', footprintW: 3, footprintH: 1, sprite: CHESS_SET_SPRITE, isDesk: false, category: 'misc' },
+  { type: FurnitureType.POOL_CHAIR, label: 'Pool Chair', footprintW: 1, footprintH: 1, sprite: POOL_CHAIR_SPRITE, isDesk: false, category: 'decor', backgroundTiles: 1 },
+  { type: FurnitureType.KNIGHT, label: 'Knight', footprintW: 1, footprintH: 1, sprite: KNIGHT_DOWN_SPRITE, isDesk: false, category: 'decor', backgroundTiles: 1 },
+  { type: FurnitureType.STUMP, label: 'Tree Stump', footprintW: 1, footprintH: 1, sprite: STUMP_SPRITE, isDesk: false, category: 'decor', backgroundTiles: 1 },
+  { type: FurnitureType.CAMPFIRE, label: 'Campfire', footprintW: 1, footprintH: 1, sprite: CAMPFIRE_SPRITE, isDesk: false, category: 'decor' },
 
 ]
 
