@@ -190,7 +190,7 @@ export function useExtensionMessages(
 
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
-    let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string; folderName?: string; sessionId?: string }> = []
+    let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string; folderName?: string; sessionId?: string; goal?: string }> = []
 
     const handler = (e: MessageEvent) => {
       const msg = e.data
@@ -224,6 +224,9 @@ export function useExtensionMessages(
           os.addAgent(p.id, p.palette, p.hueShift, seatId, true, p.folderName)
           if (p.sessionId) {
             os.setAgentSessionId(p.id, p.sessionId)
+          }
+          if (p.goal) {
+            os.setAgentGoal(p.id, p.goal)
           }
         }
         if (assignments !== homeDeskAssignmentsRef.current) {
@@ -306,10 +309,11 @@ export function useExtensionMessages(
         const meta = (msg.agentMeta || {}) as Record<number, { palette?: number; hueShift?: number; seatId?: string }>
         const folderNames = (msg.folderNames || {}) as Record<number, string>
         const sessionIds = (msg.sessionIds || {}) as Record<number, string>
+        const goals = (msg.goals || {}) as Record<number, string>
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id]
-          pendingAgents.push({ id, palette: m?.palette, hueShift: m?.hueShift, seatId: m?.seatId, folderName: folderNames[id], sessionId: sessionIds[id] })
+          pendingAgents.push({ id, palette: m?.palette, hueShift: m?.hueShift, seatId: m?.seatId, folderName: folderNames[id], sessionId: sessionIds[id], goal: goals[id] })
         }
         setAgents((prev) => {
           const ids = new Set(prev)
@@ -321,6 +325,10 @@ export function useExtensionMessages(
           }
           return merged.sort((a, b) => a - b)
         })
+      } else if (msg.type === 'agentGoalChanged') {
+        const id = msg.id as number
+        const goal = msg.goal as string
+        os.setAgentGoal(id, goal)
       } else if (msg.type === 'agentToolStart') {
         const id = msg.id as number
         const toolId = msg.toolId as string
@@ -332,6 +340,7 @@ export function useExtensionMessages(
         })
         const toolName = extractToolName(status)
         os.setAgentTool(id, toolName)
+        os.setAgentLiveStatus(id, status)  // full "Editing foo.ts" string for the label
         os.setAgentActive(id, true)
         os.setAgentBetweenTools(id, false)  // a tool is now running
         os.clearPermissionBubble(id)
@@ -356,6 +365,7 @@ export function useExtensionMessages(
           const stillActive = newList.some((t) => !t.done)
           if (!stillActive) {
             os.setAgentBetweenTools(id, true)
+            os.setAgentLiveStatus(id, null)  // no live tool → label falls back to goal/idle
           }
           return { ...prev, [id]: newList }
         })
@@ -379,6 +389,7 @@ export function useExtensionMessages(
         os.removeAllSubagents(id)
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.setAgentTool(id, null)
+        os.setAgentLiveStatus(id, null)
         os.clearPermissionBubble(id)
       } else if (msg.type === 'agentSelected') {
         const id = msg.id as number
@@ -397,6 +408,7 @@ export function useExtensionMessages(
         })
         os.setAgentActive(id, status === 'active')
         if (status === 'waiting') {
+          os.setAgentLiveStatus(id, null)
           os.showWaitingBubble(id)
           playDoneSound()
         }
@@ -533,6 +545,7 @@ export function useExtensionMessages(
         if (subId !== null) {
           const subToolName = extractToolName(status)
           os.setAgentTool(subId, subToolName)
+          os.setAgentLiveStatus(subId, status)
           os.setAgentActive(subId, true)
         }
       } else if (msg.type === 'subagentToolDone') {

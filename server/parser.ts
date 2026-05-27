@@ -1,5 +1,6 @@
 import * as path from "path";
 import type { TrackedAgent, ServerMessage, ActiveTool } from "./types.js";
+import { deriveGoal } from "./goalExtraction.js";
 
 const READING_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch"]);
 const PERMISSION_EXEMPT_TOOLS = new Set(["Task", "AskUserQuestion"]);
@@ -242,6 +243,14 @@ function handleUserMessage(
   agent: TrackedAgent,
   emit: (msg: ServerMessage) => void,
 ): void {
+  // Newest genuine user prompt becomes the agent's "what they're working on" goal.
+  // deriveGoal returns null for tool results, slash commands, sidechains, meta, etc.
+  const goal = deriveGoal(record);
+  if (goal && goal !== agent.goal) {
+    agent.goal = goal;
+    emit({ type: "agentGoalChanged", id: agent.id, goal });
+  }
+
   const message = record.message as Record<string, unknown> | undefined;
   if (!message?.content) return;
 

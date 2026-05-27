@@ -586,6 +586,18 @@ export class OfficeState {
     this.pendingSessionIds.set(id, sessionId)
   }
 
+  /** Set the agent's "what they're working on" goal label (derived from their prompt). */
+  setAgentGoal(id: number, goal: string): void {
+    const ch = this.characters.get(id)
+    if (ch) ch.goal = goal
+  }
+
+  /** Set/clear the agent's live tool status line (e.g. "Editing foo.ts"). */
+  setAgentLiveStatus(id: number, status: string | null): void {
+    const ch = this.characters.get(id)
+    if (ch) ch.liveStatus = status ?? undefined
+  }
+
   removeAgent(id: number): void {
     // Remove from spawn queue if still queued (not yet materialized) and free its reserved seat.
     const queueIdx = this.spawnQueue.findIndex((e) => e.id === id)

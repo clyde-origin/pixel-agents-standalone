@@ -2,6 +2,32 @@ import { useState, useEffect } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import type { SubagentCharacter } from '../hooks/useExtensionMessages.js'
 import { TILE_SIZE, CharacterState } from '../office/types.js'
+import type { Character } from '../office/types.js'
+
+/** Friendly phrasing for a leisure "field trip" away from the desk. */
+function tripPhrase(trip: Character['tripMode']): string | null {
+  switch (trip) {
+    case 'ping_pong': return 'Playing ping-pong'
+    case 'chess': return 'Playing chess'
+    case 'pool': return 'At the pool table'
+    case 'beanbag': return 'Chilling on the beanbag'
+    case 'bookshelf': return 'Browsing the shelf'
+    case 'pacing': return 'Pacing, thinking'
+    case 'planting': return 'Planting in the meadow'
+    default: return null
+  }
+}
+
+/** Resolve the live "what is it doing right now" line, highest-priority first. */
+function resolveLiveLine(ch: Character, isWaiting: boolean): string {
+  if (ch.bubbleType === 'permission') return 'Needs permission'
+  if (isWaiting || ch.bubbleType === 'waiting') return 'Waiting for you'
+  if (ch.liveStatus) return ch.liveStatus
+  const trip = tripPhrase(ch.tripMode)
+  if (trip) return trip
+  if (ch.isActive) return 'Working…'
+  return 'idle'
+}
 
 interface AgentLabelsProps {
   officeState: OfficeState
@@ -86,7 +112,13 @@ export function AgentLabels({
           dotColor = 'var(--vscode-charts-blue, #3794ff)'
         }
 
-        const labelText = subLabelMap.get(id) || ch.folderName || `Agent #${id}`
+        // Line 1 = identity + intent. Sub-agents use their subtask label (their "goal").
+        const subLabel = subLabelMap.get(id)
+        const identity = isSub ? (subLabel || `Agent #${id}`) : (ch.folderName || `Agent #${id}`)
+        const goal = isSub ? undefined : ch.goal
+        // Line 2 = what it's doing right now.
+        const liveLine = resolveLiveLine(ch, isWaiting)
+        const liveDim = liveLine === 'idle'
 
         return (
           <div
@@ -94,8 +126,10 @@ export function AgentLabels({
             style={{
               position: 'absolute',
               left: screenX,
-              top: screenY - 16,
-              transform: 'translateX(-50%)',
+              top: screenY,
+              // Anchor the label's BOTTOM just above the head so it clears the sprite
+              // regardless of how many lines it has.
+              transform: 'translate(-50%, -100%)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -115,22 +149,49 @@ export function AgentLabels({
                 }}
               />
             )}
-            <span
+            <div
               style={{
-                fontSize: isSub ? '16px' : '18px',
-                fontStyle: isSub ? 'italic' : undefined,
-                color: 'var(--vscode-foreground)',
-                background: 'rgba(30,30,46,0.7)',
-                padding: '1px 4px',
-                borderRadius: 2,
-                whiteSpace: 'nowrap',
-                maxWidth: isSub ? 120 : undefined,
-                overflow: isSub ? 'hidden' : undefined,
-                textOverflow: isSub ? 'ellipsis' : undefined,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                background: 'rgba(30,30,46,0.78)',
+                padding: '1px 5px 2px',
+                borderRadius: 3,
+                maxWidth: isSub ? 140 : 240,
               }}
             >
-              {labelText}
-            </span>
+              {/* Line 1: identity · "goal" */}
+              <span
+                style={{
+                  fontSize: isSub ? '15px' : '17px',
+                  fontStyle: isSub ? 'italic' : undefined,
+                  color: 'var(--vscode-foreground)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                }}
+              >
+                {identity}
+                {goal && <span style={{ opacity: 0.72 }}>{` · “${goal}”`}</span>}
+              </span>
+              {/* Line 2: live focus */}
+              <span
+                style={{
+                  fontSize: '12px',
+                  lineHeight: 1.2,
+                  color: 'var(--vscode-descriptionForeground, #aab)',
+                  opacity: liveDim ? 0.5 : 0.85,
+                  fontStyle: liveDim ? 'italic' : undefined,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                }}
+              >
+                {liveLine}
+              </span>
+            </div>
           </div>
         )
       })}

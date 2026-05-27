@@ -272,10 +272,12 @@ function sendInitialData(ws: WebSocket): void {
   const agentIds = agentList.map((a) => a.id);
   const folderNames: Record<number, string> = {};
   const sessionIds: Record<number, string> = {};
+  const goals: Record<number, string> = {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const a of agentList) {
     folderNames[a.id] = a.projectName;
     sessionIds[a.id] = a.sessionId;
+    if (a.goal) goals[a.id] = a.goal;
     if (persistedSeats?.[a.id]) {
       const s = persistedSeats[a.id];
       agentMeta[a.id] = { palette: s.palette, hueShift: s.hueShift, seatId: s.seatId ?? undefined };
@@ -284,7 +286,7 @@ function sendInitialData(ws: WebSocket): void {
   for (const a of agents.values()) {
     ws.send(JSON.stringify({ type: 'agentFeedSnapshot', id: a.id, entries: a.feedBuffer.snapshot() }))
   }
-  ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, sessionIds, agentMeta }));
+  ws.send(JSON.stringify({ type: "existingAgents", agents: agentIds, folderNames, sessionIds, goals, agentMeta }));
 
   ws.send(JSON.stringify({
     type: "responsesLoaded",
@@ -366,6 +368,7 @@ watcher.on("fileAdded", (file: WatchedFile) => {
     hadToolsInTurn: false,
     lastActivityTime: Date.now(),
     lastAssistantText: "",
+    goal: "",
     feedBuffer: new FeedBuffer(40),
   };
 

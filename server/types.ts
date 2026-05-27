@@ -32,6 +32,8 @@ export interface TrackedAgent {
   lastActivityTime: number;
   /** Most recent assistant-message text (concatenated) — used for permission modal context. */
   lastAssistantText: string;
+  /** Cleaned label derived from the newest genuine user prompt — "what they're working on". */
+  goal: string;
   feedBuffer: FeedBuffer;
 }
 
@@ -40,7 +42,8 @@ export interface TrackedAgent {
 export type ServerMessage =
   | { type: "agentCreated"; id: number; folderName: string; sessionId: string }
   | { type: "agentClosed"; id: number }
-  | { type: "existingAgents"; agents: number[]; folderNames: Record<number, string>; sessionIds: Record<number, string>; agentMeta?: Record<number, { palette?: number; hueShift?: number; seatId?: string }> }
+  | { type: "existingAgents"; agents: number[]; folderNames: Record<number, string>; sessionIds: Record<number, string>; goals?: Record<number, string>; agentMeta?: Record<number, { palette?: number; hueShift?: number; seatId?: string }> }
+  | { type: "agentGoalChanged"; id: number; goal: string }
   | { type: "agentToolStart"; id: number; toolId: string; status: string }
   | { type: "agentToolDone"; id: number; toolId: string }
   | { type: "agentToolsClear"; id: number }

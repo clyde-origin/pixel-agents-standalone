@@ -222,6 +222,10 @@ export interface Character {
   matrixEffectSeeds: number[]
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string
+  /** Cleaned label for the newest user prompt — "what this agent is working on". */
+  goal?: string
+  /** Live status of the current tool (e.g. "Editing officeState.ts"); cleared between tools. */
+  liveStatus?: string
   /** Claude Code session id (set when the agent's transcript file is detected). */
   sessionId?: string
   /** Activity intensity 0-1 — bumped on each tool start, decays over time. Drives typing speed. */
