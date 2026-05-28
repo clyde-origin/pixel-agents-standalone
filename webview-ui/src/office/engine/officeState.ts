@@ -930,6 +930,17 @@ export class OfficeState {
           }
           ch.plantingTimer = undefined
         }
+        // Re-activated mid-ritual — release campfire bookkeeping (the trip tile itself is
+        // freed by endTrip on the next update tick once desiredTripFor returns null).
+        if (ch.tripMode === 'campfire_wood') {
+          // woodReserved is held for the whole run (reserved at trip start) — release it.
+          this.campfire = { ...this.campfire, woodReserved: Math.max(0, this.campfire.woodReserved - 1) }
+          ch.carrying = false
+          ch.woodDropTimer = undefined
+        }
+        if (ch.tripMode === 'campfire_dance') {
+          this.campfire = { ...this.campfire, dancers: this.campfire.dancers.filter((d) => d !== id) }
+        }
       }
       this.rebuildFurnitureInstances()
     }
