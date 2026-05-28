@@ -1,4 +1,4 @@
-import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction } from '../types.js'
+import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction, TileType } from '../types.js'
 import { isReadingTool } from './characters.js'
 import {
   PALETTE_COUNT,
