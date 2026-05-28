@@ -95,6 +95,36 @@ interface ZDrawable {
   draw: (ctx: CanvasRenderingContext2D) => void
 }
 
+/** Permanent "danced" look: bare-skin chest patch + loincloth band, painted over the
+ *  lower torso of an already-drawn character sprite. `originX/originY` are the sprite's
+ *  top-left in device px; `pxW/pxH` are the sprite's SOURCE pixel dimensions. */
+function drawLoinclothOverlay(
+  ctx: CanvasRenderingContext2D,
+  originX: number, originY: number,
+  pxW: number, pxH: number,
+  zoom: number,
+): void {
+  // Torso occupies roughly the vertical middle of the sprite (below head, above legs).
+  const chestTop = originY + Math.round(pxH * 0.42) * zoom
+  const chestH = Math.round(pxH * 0.16) * zoom
+  const hipTop = originY + Math.round(pxH * 0.58) * zoom
+  const hipH = Math.max(1, Math.round(pxH * 0.10) * zoom)
+  // Inset from the sprite edges so we don't paint over the arms' outer edge / outline.
+  const inset = Math.round(pxW * 0.19) * zoom
+  const x = originX + inset
+  const w = pxW * zoom - inset * 2
+  ctx.save()
+  // Bare chest (skin) — flat mid skin with a 1px shadow line for a little form.
+  ctx.fillStyle = '#E9A384'
+  ctx.fillRect(x, chestTop, w, chestH)
+  ctx.fillStyle = '#C5896E'
+  ctx.fillRect(x, chestTop + chestH - Math.max(1, Math.round(zoom)), w, Math.max(1, Math.round(zoom)))
+  // Loincloth band.
+  ctx.fillStyle = '#6B4A2B'
+  ctx.fillRect(x, hipTop, w, hipH)
+  ctx.restore()
+}
+
 export function renderScene(
   ctx: CanvasRenderingContext2D,
   furniture: FurnitureInstance[],
@@ -190,10 +220,20 @@ export function renderScene(
       })
     }
 
+    // Capture danced flag + sprite source dims for the overlay closure.
+    const chDanced = ch.danced === true
+    const spritePxW = cached.width / zoom
+    const spritePxH = cached.height / zoom
+    const chDrawX = drawX
+    const chDrawY = drawY
+
     drawables.push({
       zY: charZY,
       draw: (c) => {
-        c.drawImage(cached, drawX, drawY)
+        c.drawImage(cached, chDrawX, chDrawY)
+        if (chDanced) {
+          drawLoinclothOverlay(c, chDrawX, chDrawY, spritePxW, spritePxH, zoom)
+        }
       },
     })
   }
