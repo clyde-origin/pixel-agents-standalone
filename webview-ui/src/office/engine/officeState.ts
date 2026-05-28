@@ -307,6 +307,8 @@ export class OfficeState {
       ch.tripTile = null
       ch.path = []
       ch.moveProgress = 0
+      ch.carrying = false
+      ch.woodDropTimer = undefined
     }
 
     // Re-resolve campfire geometry and reset the ritual (slot coords may have moved).
@@ -1651,6 +1653,40 @@ export class OfficeState {
     return this.findFreePoolSlot(ch) !== null
   }
 
+  /** True when this idle agent should go fetch wood: fire is growing, has capacity,
+   *  and a woodpile + a free drop tile exist. */
+  private canStartCampfireWood(ch: Character): boolean {
+    if (!this.fireTile || !this.woodpileTile) return false
+    if (this.campfire.phase !== 'growing') return false
+    if (this.campfire.woodLevel + this.campfire.woodReserved >= WOOD_TO_FULL) return false
+    return this.findFreeWoodDropTile(ch) !== null
+  }
+
+  /** The four free edge-center tiles of the 3×3 used to stand and toss wood in. */
+  private findFreeWoodDropTile(ch: Character): Tile | null {
+    if (!this.fireTile) return null
+    const f = this.fireTile
+    const edges: Tile[] = [
+      { col: f.col, row: f.row - 1 },
+      { col: f.col + 1, row: f.row },
+      { col: f.col, row: f.row + 1 },
+      { col: f.col - 1, row: f.row },
+    ]
+    let best: Tile | null = null
+    let bestDist = Infinity
+    for (const s of edges) {
+      const key = `${s.col},${s.row}`
+      const mine = ch.tripTile && ch.tripTile.col === s.col && ch.tripTile.row === s.row
+      if (this.occupiedTripTiles.has(key) && !mine) continue
+      if (this.blockedTiles.has(key) && !mine) continue
+      const t = this.tileMap[s.row]?.[s.col]
+      if (t === undefined) continue
+      const dist = Math.abs(s.col - ch.tileCol) + Math.abs(s.row - ch.tileRow)
+      if (dist < bestDist) { best = s; bestDist = dist }
+    }
+    return best
+  }
+
   /** Pick a random grass tile (h===95 in tileColors) that is walkable, not blocked,
    *  not already planted, and not claimed by another planter. Returns null on no
    *  candidates. */
@@ -1678,7 +1714,7 @@ export class OfficeState {
   }
 
   /** Begin walking the agent toward a trip target. Returns true if a path was found. */
-  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting'): boolean {
+  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance'): boolean {
     let target: { col: number; row: number } | null
     if (type === 'pacing') {
       target = this.pickPacingTile(ch.tileCol, ch.tileRow)
@@ -1693,6 +1729,8 @@ export class OfficeState {
       if (target) {
         this.claimedPlantTiles.add(`${target.col},${target.row}`)
       }
+    } else if (type === 'campfire_wood') {
+      target = this.woodpileTile
     } else {
       target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
     }
@@ -1706,14 +1744,19 @@ export class OfficeState {
       this.blockedTiles,
     )
     if (path.length === 0) return false
+    if (type === 'campfire_wood') {
+      // Reserve a wood slot now that the run is confirmed (decremented when the log is dropped).
+      this.campfire = { ...this.campfire, woodReserved: this.campfire.woodReserved + 1 }
+    }
     if (ch.originalSeatId === null) {
       ch.originalSeatId = ch.seatId
     }
     ch.seatId = null  // tells WALK→arrive logic to "sit in place"
     ch.tripMode = type
     ch.tripTile = target
-    // Pacing tiles aren't reserved — multiple pacers share the library aisle freely.
-    if (type !== 'pacing') {
+    // Pacing aisles and the shared woodpile aren't reserved (many agents use them);
+    // the wood-drop tile is reserved explicitly when the agent picks up a log.
+    if (type !== 'pacing' && type !== 'campfire_wood') {
       this.occupiedTripTiles.add(`${target.col},${target.row}`)
     }
     ch.path = path
@@ -1776,8 +1819,15 @@ export class OfficeState {
     }
   }
 
+  /** Cardinal facing from an agent toward a target tile. */
+  private facingTowardTile(ch: Character, t: Tile): Direction {
+    return Math.abs(t.col - ch.tileCol) > Math.abs(t.row - ch.tileRow)
+      ? (t.col > ch.tileCol ? Direction.RIGHT : Direction.LEFT)
+      : (t.row > ch.tileRow ? Direction.DOWN : Direction.UP)
+  }
+
   /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | null {
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | null {
     if (!ch.isActive) {
       // Stay committed to in-flight planting until the timer runs out below.
       if (ch.tripMode === 'planting') return 'planting'
@@ -1788,6 +1838,10 @@ export class OfficeState {
       if (ch.tripMode === 'chess' && ch.tripTile) return 'chess'
       if (ch.tripMode === 'ping_pong' && ch.tripTile) return 'ping_pong'
       if (ch.tripMode === 'pool') return 'pool'
+      // Stay committed to an in-flight wood run.
+      if (ch.tripMode === 'campfire_wood') return 'campfire_wood'
+      // Start a wood run if the fire wants feeding (takes priority over lounging).
+      if (this.canStartCampfireWood(ch)) return 'campfire_wood'
       // Not yet at a slot — fall through to fresh selection.
       // Prefer 2-player activities first, then pool (6 slots), then beanbag.
       if (this.canStartPingPong(ch)) return 'ping_pong'
@@ -2186,6 +2240,39 @@ export class OfficeState {
           this.pendingPlant.delete(ch.id)
           ch.plantingTimer = undefined
           this.endTrip(ch)
+        }
+      }
+
+      // Campfire wood run: woodpile → carry → drop tile → grow the fire.
+      if (ch.tripMode === 'campfire_wood' && ch.tripTile && ch.state !== CharacterState.WALK && ch.path.length === 0) {
+        const atWoodpile = !!this.woodpileTile && ch.tileCol === this.woodpileTile.col && ch.tileRow === this.woodpileTile.row
+        if (atWoodpile && !ch.carrying) {
+          // Picked up a log — now head to a free drop tile by the fire.
+          const drop = this.findFreeWoodDropTile(ch)
+          if (drop) {
+            const path = findPath(ch.tileCol, ch.tileRow, drop.col, drop.row, this.tileMap, this.blockedTiles)
+            if (path.length > 0) {
+              ch.carrying = true
+              this.occupiedTripTiles.add(`${drop.col},${drop.row}`)
+              ch.tripTile = drop
+              ch.path = path
+              ch.moveProgress = 0
+              ch.state = CharacterState.WALK
+              ch.frame = 0
+              ch.frameTimer = 0
+            }
+          }
+        } else if (ch.carrying && this.fireTile) {
+          // Arrived at the drop tile — face the fire and run the drop timer.
+          ch.dir = this.facingTowardTile(ch, this.fireTile)
+          if (ch.woodDropTimer === undefined) ch.woodDropTimer = DROP_DURATION_MS
+          ch.woodDropTimer -= dt * 1000
+          if (ch.woodDropTimer <= 0) {
+            this.campfire = addWood({ ...this.campfire, woodReserved: Math.max(0, this.campfire.woodReserved - 1) }, nowMs)
+            ch.woodDropTimer = undefined
+            ch.carrying = false
+            this.endTrip(ch)
+          }
         }
       }
 
