@@ -1006,7 +1006,7 @@ export function renderSleepingDragon(
 // ── Forest animals ──────────────────────────────────────────────
 
 export interface ForestAnimal {
-  kind: 'rabbit' | 'squirrel'
+  kind: 'rabbit' | 'squirrel' | 'baby-dragon'
   /** Current world-pixel position (tile-center coordinates). */
   x: number
   y: number

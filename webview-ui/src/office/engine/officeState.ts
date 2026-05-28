@@ -240,7 +240,7 @@ export class OfficeState {
    *  around the merge desk when all 4 hero PCs are active. Pure visual (no pathfinding,
    *  no collision). World pixel coordinates. */
   animals: Array<{
-    kind: 'rabbit' | 'squirrel'
+    kind: 'rabbit' | 'squirrel' | 'baby-dragon'
     homeX: number
     homeY: number
     watchX: number
@@ -1576,7 +1576,7 @@ export class OfficeState {
       const a = this.animals[i]
       let tx: number
       let ty: number
-      if (watching) {
+      if (watching && a.kind !== 'baby-dragon') {
         tx = a.watchX
         ty = a.watchY
         // Push next random hop slightly into the future so they don't bolt away the
@@ -1586,7 +1586,7 @@ export class OfficeState {
         // Pick a new random target every so often (or when we've reached the current one).
         const reached = Math.abs(a.targetX - a.x) < 1 && Math.abs(a.targetY - a.y) < 1
         if (nowMs >= a.nextHopAt || reached) {
-          const r = OfficeState.ANIMAL_HOP_RADIUS_PX
+          const r = a.kind === 'baby-dragon' ? 6 : OfficeState.ANIMAL_HOP_RADIUS_PX
           a.targetX = a.homeX + (Math.random() - 0.5) * r * 2
           a.targetY = a.homeY + (Math.random() - 0.5) * r * 2
           const span = OfficeState.ANIMAL_HOP_MAX_MS - OfficeState.ANIMAL_HOP_MIN_MS
@@ -1710,8 +1710,27 @@ export class OfficeState {
     return n
   }
 
-  /** Spawn one baby dragon near the fire (implemented in a later task). */
-  private hatchDragon(): void { /* implemented in Task 8 */ }
+  /** Hatch one baby dragon, fanned out around the fire so a brood clusters. */
+  private hatchDragon(): void {
+    if (!this.fireTile) return
+    const broodCount = this.animals.filter((a) => a.kind === 'baby-dragon').length
+    // Golden-angle fan so each new dragon sits at a fresh spot around the fire.
+    const angle = broodCount * 2.39996
+    const radiusPx = TILE_SIZE * 1.6
+    const fx = this.fireTile.col * TILE_SIZE + TILE_SIZE / 2
+    const fy = this.fireTile.row * TILE_SIZE + TILE_SIZE / 2
+    const homeX = fx + Math.cos(angle) * radiusPx
+    const homeY = fy + Math.sin(angle) * radiusPx
+    this.animals.push({
+      kind: 'baby-dragon',
+      homeX, homeY,
+      watchX: homeX, watchY: homeY,   // dragons ignore the "watch" gather; keep == home
+      x: fx, y: fy,                   // born at the egg, then settles to home
+      facing: Math.cos(angle) >= 0 ? 'right' : 'left',
+      targetX: homeX, targetY: homeY,
+      nextHopAt: performance.now() + Math.random() * 2000,
+    })
+  }
 
   /** True when this idle agent has a partner available and at least one chess slot is free. */
   private canStartChess(ch: Character): boolean {
