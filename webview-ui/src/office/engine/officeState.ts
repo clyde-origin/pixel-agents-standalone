@@ -1594,13 +1594,99 @@ export class OfficeState {
 
   private tickCampfire(dt: number, nowMs: number): void {
     if (!this.fireTile) return
+
+    // Recruit dancers whenever the fire is full or dancing and slots remain.
+    if (this.campfire.phase === 'full' || this.campfire.phase === 'dancing') {
+      this.recruitDancers()
+    }
+
     const dancerCount = this.countSeatedDancers()
     const { state, events } = advanceCampfire(this.campfire, dt * 1000, { nowMs, dancerCount })
     this.campfire = state
+
     for (const ev of events) {
-      if (ev === 'hatch') this.hatchDragon()
-      // 'start_dancing' / 'rotate' / 'start_burndown' / 'lay_egg' handled in later tasks.
+      if (ev === 'rotate') this.rotateDancers()
+      else if (ev === 'start_burndown') this.releaseDancers()
+      else if (ev === 'hatch') this.hatchDragon()
+      // 'start_dancing' / 'lay_egg' need no imperative action here.
     }
+
+    // Face every seated dancer toward the fire + flag them as transformed.
+    for (const id of this.campfire.dancers) {
+      const ch = this.characters.get(id)
+      if (!ch || !ch.tripTile) continue
+      if (ch.tileCol === ch.tripTile.col && ch.tileRow === ch.tripTile.row) {
+        ch.dir = this.facingTowardTile(ch, this.fireTile)
+        ch.danced = true
+      }
+    }
+  }
+
+  /** Pull idle agents onto free dance slots, up to the ring capacity. */
+  private recruitDancers(): void {
+    const live = this.campfire.dancers.filter((id) => {
+      const ch = this.characters.get(id)
+      return ch && ch.tripMode === 'campfire_dance'
+    })
+    let changed = live.length !== this.campfire.dancers.length
+    const dancers = live
+    for (const ch of this.characters.values()) {
+      if (dancers.length >= this.danceSlots.length) break
+      if (ch.isGreeter || ch.isKnight || ch.isActive || ch.matrixEffect) continue
+      if (ch.tripMode === 'campfire_dance') continue
+      // Let wood-fetchers finish their run (they hold a woodReserved slot); they'll
+      // become idle and join the dance on a later pass.
+      if (ch.tripMode === 'campfire_wood') continue
+      if (this.findFreeDanceSlot(ch) === null) continue
+      // Free any current trip tile before reassigning.
+      if (ch.tripTile) { this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`); ch.tripTile = null; ch.tripMode = null }
+      if (this.startTrip(ch, 'campfire_dance')) { dancers.push(ch.id); changed = true }
+    }
+    if (changed) this.campfire = { ...this.campfire, dancers }
+  }
+
+  /** Advance every seated dancer one slot clockwise. A cyclic shift among the dancers'
+   *  own slots, applied as a simultaneous two-phase permutation so a FULL ring doesn't
+   *  deadlock (every target is another dancer's just-vacated slot). */
+  private rotateDancers(): void {
+    const moves: Array<{ ch: Character; from: Tile; to: Tile }> = []
+    for (const id of this.campfire.dancers) {
+      const ch = this.characters.get(id)
+      if (!ch || !ch.tripTile) continue
+      const idx = this.danceSlots.findIndex((s) => s.col === ch.tripTile!.col && s.row === ch.tripTile!.row)
+      if (idx < 0) continue
+      const to = this.danceSlots[(idx + 1) % this.danceSlots.length]
+      moves.push({ ch, from: ch.tripTile, to })
+    }
+    if (moves.length < 2) return
+    // Phase 1: release every dancer's current slot (no transient conflict).
+    for (const m of moves) this.occupiedTripTiles.delete(`${m.from.col},${m.from.row}`)
+    // Phase 2: claim the next slot. Distinct dancers map to distinct next slots, so the
+    // only blocker is a wall — fall back to staying put in that (unexpected) case.
+    for (const m of moves) {
+      const target = this.blockedTiles.has(`${m.to.col},${m.to.row}`) ? m.from : m.to
+      this.occupiedTripTiles.add(`${target.col},${target.row}`)
+      m.ch.tripTile = target
+      if (target !== m.from) {
+        const path = findPath(m.ch.tileCol, m.ch.tileRow, target.col, target.row, this.tileMap, this.blockedTiles)
+        if (path.length > 0) {
+          m.ch.path = path
+          m.ch.moveProgress = 0
+          m.ch.state = CharacterState.WALK
+          m.ch.frame = 0
+          m.ch.frameTimer = 0
+        }
+      }
+    }
+  }
+
+  /** End the dance: send all dancers home. */
+  private releaseDancers(): void {
+    for (const id of this.campfire.dancers) {
+      const ch = this.characters.get(id)
+      if (ch) this.endTrip(ch)
+    }
+    this.campfire = { ...this.campfire, dancers: [] }
   }
 
   /** Count agents currently standing on a dance slot. */
@@ -1687,6 +1773,21 @@ export class OfficeState {
     return best
   }
 
+  /** Closest free dance-ring slot, or null. */
+  private findFreeDanceSlot(ch: Character): Tile | null {
+    let best: Tile | null = null
+    let bestDist = Infinity
+    for (const s of this.danceSlots) {
+      const key = `${s.col},${s.row}`
+      const mine = ch.tripTile && ch.tripTile.col === s.col && ch.tripTile.row === s.row
+      if (this.occupiedTripTiles.has(key) && !mine) continue
+      if (this.blockedTiles.has(key) && !mine) continue
+      const dist = Math.abs(s.col - ch.tileCol) + Math.abs(s.row - ch.tileRow)
+      if (dist < bestDist) { best = s; bestDist = dist }
+    }
+    return best
+  }
+
   /** Pick a random grass tile (h===95 in tileColors) that is walkable, not blocked,
    *  not already planted, and not claimed by another planter. Returns null on no
    *  candidates. */
@@ -1731,6 +1832,8 @@ export class OfficeState {
       }
     } else if (type === 'campfire_wood') {
       target = this.woodpileTile
+    } else if (type === 'campfire_dance') {
+      target = this.findFreeDanceSlot(ch)
     } else {
       target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
     }
@@ -1840,6 +1943,8 @@ export class OfficeState {
       if (ch.tripMode === 'pool') return 'pool'
       // Stay committed to an in-flight wood run.
       if (ch.tripMode === 'campfire_wood') return 'campfire_wood'
+      // Stay committed to an in-flight dance.
+      if (ch.tripMode === 'campfire_dance') return 'campfire_dance'
       // Start a wood run if the fire wants feeding (takes priority over lounging).
       if (this.canStartCampfireWood(ch)) return 'campfire_wood'
       // Not yet at a slot — fall through to fresh selection.
