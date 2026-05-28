@@ -32,6 +32,11 @@ import {
   getBlockedTiles,
 } from '../layout/layoutSerializer.js'
 import { getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js'
+import {
+  createCampfireState, resolveFireTile, resolveWoodpileTile, computeDanceSlots,
+  addWood, advanceCampfire, WOOD_TO_FULL, DROP_DURATION_MS,
+  type CampfireState, type Tile,
+} from './campfire.js'
 
 export class OfficeState {
   layout: OfficeLayout
@@ -115,6 +120,7 @@ export class OfficeState {
     this.buildRevealQueue()
     this.rebuildVisibleState()
     this.ensureGreeter()
+    this.resolveCampfireGeometry()
   }
 
   /** Sentinel ids for the two persistent greeter NPCs. Far below subagent IDs (which start at -1 and decrement). */
@@ -260,6 +266,15 @@ export class OfficeState {
     { kind: 'rabbit' as const,   homeCol: 15, homeRow: 19, watchCol: 10, watchRow: 6 },
   ]
 
+  // ── Campfire ritual ──
+  campfire: CampfireState = createCampfireState()
+  /** Fire tile resolved from the layout (null if no campfire furniture present). */
+  private fireTile: Tile | null = null
+  /** Woodpile tile agents fetch logs from. */
+  private woodpileTile: Tile | null = null
+  /** Ordered clockwise dance-ring slots around the fire. */
+  private danceSlots: Tile[] = []
+
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
@@ -293,6 +308,10 @@ export class OfficeState {
       ch.path = []
       ch.moveProgress = 0
     }
+
+    // Re-resolve campfire geometry and reset the ritual (slot coords may have moved).
+    this.campfire = createCampfireState()
+    this.resolveCampfireGeometry()
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -370,6 +389,23 @@ export class OfficeState {
     ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2
     ch.path = []
     ch.moveProgress = 0
+  }
+
+  /** Resolve fire/woodpile/dance-ring tiles from the current layout + walkability. */
+  private resolveCampfireGeometry(): void {
+    this.fireTile = resolveFireTile(this.layout)
+    if (!this.fireTile) {
+      this.woodpileTile = null
+      this.danceSlots = []
+      return
+    }
+    const walkable = (c: number, r: number): boolean => {
+      if (this.blockedTiles.has(`${c},${r}`)) return false
+      const t = this.tileMap[r]?.[c]
+      return t !== undefined && t !== TileType.WALL && t !== TileType.VOID
+    }
+    this.woodpileTile = resolveWoodpileTile(this.fireTile, walkable)
+    this.danceSlots = computeDanceSlots(this.fireTile, walkable)
   }
 
   getLayout(): OfficeLayout {
@@ -1554,6 +1590,30 @@ export class OfficeState {
     }
   }
 
+  private tickCampfire(dt: number, nowMs: number): void {
+    if (!this.fireTile) return
+    const dancerCount = this.countSeatedDancers()
+    const { state, events } = advanceCampfire(this.campfire, dt * 1000, { nowMs, dancerCount })
+    this.campfire = state
+    for (const ev of events) {
+      if (ev === 'hatch') this.hatchDragon()
+      // 'start_dancing' / 'rotate' / 'start_burndown' / 'lay_egg' handled in later tasks.
+    }
+  }
+
+  /** Count agents currently standing on a dance slot. */
+  private countSeatedDancers(): number {
+    let n = 0
+    for (const id of this.campfire.dancers) {
+      const ch = this.characters.get(id)
+      if (ch && ch.tripTile && ch.tileCol === ch.tripTile.col && ch.tileRow === ch.tripTile.row) n++
+    }
+    return n
+  }
+
+  /** Spawn one baby dragon near the fire (implemented in a later task). */
+  private hatchDragon(): void { /* implemented in Task 8 */ }
+
   /** True when this idle agent has a partner available and at least one chess slot is free. */
   private canStartChess(ch: Character): boolean {
     const slot = this.findFreeChessSlot(ch)
@@ -1983,6 +2043,7 @@ export class OfficeState {
     this.tickDeskAnimations(nowMs)
     this.updatePingPongMatch(nowMs)
     this.tickAnimals(dt, nowMs)
+    this.tickCampfire(dt, nowMs)
 
     const toDelete: number[] = []
     for (const ch of this.characters.values()) {
