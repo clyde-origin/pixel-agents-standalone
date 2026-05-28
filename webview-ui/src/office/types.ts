@@ -242,7 +242,7 @@ export interface Character {
    *  - 'pacing'    — walking back and forth in the library area while thinking
    *  - 'ping_pong' — standing at one end of the lounge ping-pong table
    *  - 'chess'     — standing at one end of the lounge chess set */
-  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | null
+  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | null
   /** Tile the agent is occupying (or walking toward) for the current trip. */
   tripTile: { col: number; row: number } | null
   /** Home seat to return to when the trip ends. Saved when the trip begins. */
@@ -278,6 +278,12 @@ export interface Character {
   /** Milliseconds remaining in the current planting ceremony (counts down from
    *  PLANTING_DURATION_MS). Undefined when not actively planting. */
   plantingTimer?: number
+  /** True once this agent has joined a campfire dance — permanent; renders shirtless+loincloth. */
+  danced?: boolean
+  /** True while carrying a log to the fire (campfire_wood trip, post-pickup). */
+  carrying?: boolean
+  /** Milliseconds remaining while dropping a log at the fire. */
+  woodDropTimer?: number
 }
 
 export interface ToolEffect {
