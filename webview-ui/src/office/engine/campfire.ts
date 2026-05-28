@@ -102,3 +102,76 @@ function angleCW(fire: Tile, t: Tile): number {
   const a = Math.atan2(t.col - fire.col, -(t.row - fire.row))
   return a < 0 ? a + Math.PI * 2 : a
 }
+
+export interface CampfireContext {
+  nowMs: number
+  dancerCount: number // agents currently seated on the ring
+}
+
+export type CampfireEvent =
+  | 'start_dancing'
+  | 'rotate'
+  | 'start_burndown'
+  | 'lay_egg'
+  | 'hatch'
+
+/** Record one dropped log. Increments wood; flips to 'full' at the cap. */
+export function addWood(state: CampfireState, nowMs: number): CampfireState {
+  if (state.phase !== 'growing') return state
+  const woodLevel = Math.min(WOOD_TO_FULL, state.woodLevel + 1)
+  if (woodLevel >= WOOD_TO_FULL) {
+    return { ...state, woodLevel, phase: 'full', phaseStartMs: nowMs }
+  }
+  return { ...state, woodLevel }
+}
+
+/** Advance time-based phases. Returns the new state + any side-effect events for
+ *  OfficeState to act on (recruit/rotate dancers, spawn egg/dragon). */
+export function advanceCampfire(
+  state: CampfireState,
+  _dtMs: number,
+  ctx: CampfireContext,
+): { state: CampfireState; events: CampfireEvent[] } {
+  const events: CampfireEvent[] = []
+  const elapsed = ctx.nowMs - state.phaseStartMs
+  let s = state
+
+  switch (s.phase) {
+    case 'full': {
+      const enough = ctx.dancerCount >= MIN_DANCERS
+      const graced = elapsed >= FULL_GRACE_MS && ctx.dancerCount >= 1
+      if (enough || graced) {
+        s = { ...s, phase: 'dancing', phaseStartMs: ctx.nowMs, rotateAtMs: ctx.nowMs + ROTATE_INTERVAL_MS }
+        events.push('start_dancing')
+      }
+      break
+    }
+    case 'dancing': {
+      if (ctx.nowMs >= s.rotateAtMs) {
+        s = { ...s, rotateAtMs: ctx.nowMs + ROTATE_INTERVAL_MS }
+        events.push('rotate')
+      }
+      if (elapsed >= DANCE_DURATION_MS) {
+        s = { ...s, phase: 'burning_down', phaseStartMs: ctx.nowMs }
+        events.push('start_burndown')
+      }
+      break
+    }
+    case 'burning_down': {
+      if (elapsed >= BURNDOWN_DURATION_MS) {
+        s = { ...s, phase: 'egg', phaseStartMs: ctx.nowMs }
+        events.push('lay_egg')
+      }
+      break
+    }
+    case 'egg': {
+      if (elapsed >= HATCH_DELAY_MS) {
+        s = { ...s, phase: 'growing', phaseStartMs: ctx.nowMs, woodLevel: 0, dancers: [] }
+        events.push('hatch')
+      }
+      break
+    }
+    // 'growing' and 'hatching' have no time-based transition here.
+  }
+  return { state: s, events }
+}
