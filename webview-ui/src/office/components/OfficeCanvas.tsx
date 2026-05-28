@@ -10,6 +10,7 @@ import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js'
 import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js'
 import { vscode } from '../../vscodeApi.js'
 import { unlockAudio } from '../../notificationSound.js'
+import { WOOD_TO_FULL } from '../engine/campfire.js'
 
 // On desktop the office is locked to fit-to-contain — no user pan or zoom allowed.
 const isDesktopLocked = () => window.matchMedia('(min-width: 769px)').matches
@@ -221,6 +222,13 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           ? Math.round((w - mapWdp) / 2)
           : Math.round(panRef.current.x)
 
+        const campfireRender = {
+          fireTile: officeState.getCampfireFireTile(),
+          woodLevel: officeState.campfire.woodLevel,
+          woodMax: WOOD_TO_FULL,
+          phase: officeState.campfire.phase,
+        }
+
         const { offsetX, offsetY } = renderFrame(
           ctx,
           w,
@@ -244,6 +252,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           officeState.plantedFlowers,
           2200,
           officeState.animals,
+          campfireRender,
         )
         offsetRef.current = { x: offsetX, y: offsetY }
 

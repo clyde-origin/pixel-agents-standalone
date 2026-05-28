@@ -1077,6 +1077,52 @@ function drawSquirrel(
   ctx.fillRect(cx + sign * cell, cy - 2 * cell - bob, cell, cell)
 }
 
+/** A speckled dragon egg sitting in the embers; tiny wobble as it nears hatching. */
+function drawEgg(ctx: CanvasRenderingContext2D, px: number, py: number, zoom: number, timeMs: number): void {
+  const wob = Math.sin(timeMs * 0.006) * 0.5 * zoom
+  const w = 7 * zoom, h = 9 * zoom
+  const cx = px + wob, cy = py - h / 2
+  ctx.save()
+  ctx.fillStyle = '#e8e0c8'
+  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#7bbf5a'
+  const cell = Math.max(1, Math.round(zoom))
+  ctx.fillRect(cx - 2 * zoom, cy - 1 * zoom, cell, cell)
+  ctx.fillRect(cx + 1 * zoom, cy + 2 * zoom, cell, cell)
+  ctx.fillRect(cx, cy - 3 * zoom, cell, cell)
+  ctx.restore()
+}
+
+/** A tiny green baby dragon: round body, stubby flapping wings, a horn, bobbing. */
+function drawBabyDragon(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, cell: number,
+  facing: 'left' | 'right', timeMs: number,
+): void {
+  const dir = facing === 'right' ? 1 : -1
+  const bob = Math.sin(timeMs * 0.004) * cell
+  const flap = Math.sin(timeMs * 0.012) * 1.5 * cell
+  ctx.save()
+  ctx.translate(cx, cy + bob)
+  ctx.fillStyle = '#3fa85a'
+  ctx.beginPath(); ctx.ellipse(0, 0, 4 * cell, 3.2 * cell, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#bfe89a'
+  ctx.beginPath(); ctx.ellipse(0, 1.2 * cell, 2.4 * cell, 1.8 * cell, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#3fa85a'
+  ctx.beginPath(); ctx.ellipse(dir * 3.2 * cell, -2.4 * cell, 2.6 * cell, 2.2 * cell, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.fillStyle = '#e8e0c8'
+  ctx.fillRect(dir * 3.2 * cell - cell / 2, -4.8 * cell, cell, 1.6 * cell)
+  ctx.fillStyle = '#111'
+  ctx.fillRect(dir * 4 * cell, -3 * cell, cell, cell)
+  ctx.fillStyle = '#2e8047'
+  ctx.beginPath()
+  ctx.moveTo(-dir * cell, -cell)
+  ctx.lineTo(-dir * 4 * cell, -2.5 * cell - flap)
+  ctx.lineTo(-dir * 3.5 * cell, cell)
+  ctx.closePath(); ctx.fill()
+  ctx.restore()
+}
+
 /** Draw all forest animals at their current positions. */
 export function renderAnimals(
   ctx: CanvasRenderingContext2D,
@@ -1093,6 +1139,7 @@ export function renderAnimals(
     const cx = offsetX + a.x * zoom
     const cy = offsetY + a.y * zoom
     if (a.kind === 'rabbit') drawRabbit(ctx, cx, cy, cell, a.facing, timeMs)
+    else if (a.kind === 'baby-dragon') drawBabyDragon(ctx, cx, cy, cell, a.facing, timeMs)
     else drawSquirrel(ctx, cx, cy, cell, a.facing, timeMs)
   }
   ctx.restore()
@@ -1110,58 +1157,62 @@ export function renderCampfireFlames(
   offsetY: number,
   zoom: number,
   timeMs: number,
+  campfire?: CampfireRenderState,
 ): void {
-  const { col, row } = CAMPFIRE_TILE
+  const tile = campfire?.fireTile ?? CAMPFIRE_TILE
+  const phase = campfire?.phase ?? 'growing'
+  const level = campfire ? campfire.woodLevel / Math.max(1, campfire.woodMax) : 1
+  const intensity = phase === 'egg' ? 0.15
+    : (phase === 'growing' || phase === 'full' || phase === 'dancing') ? 0.35 + 0.65 * level
+    : 0.5 // burning_down / hatching (brief transient phases)
+  const { col, row } = tile
   const cx = (col * TILE_SIZE + TILE_SIZE / 2)
-  const baseY = (row * TILE_SIZE + 7)  // sit flames on top of the embers row
+  const baseY = (row * TILE_SIZE + 7)
   const cell = Math.max(1, Math.round(zoom))
   ctx.save()
 
-  // Soft warm halo — pulses slowly.
   const halo = 0.85 + 0.15 * Math.sin(timeMs * 0.005)
-  const haloR = 12 * zoom * halo
+  const haloR = (8 + 10 * intensity) * zoom * halo
   const px = offsetX + cx * zoom
   const py = offsetY + baseY * zoom
   const haloGrad = ctx.createRadialGradient(px, py, 0, px, py, haloR)
-  haloGrad.addColorStop(0, 'rgba(255, 200, 80, 0.55)')
-  haloGrad.addColorStop(0.5, 'rgba(255, 140, 40, 0.25)')
+  haloGrad.addColorStop(0, `rgba(255, 200, 80, ${0.55 * intensity + 0.15})`)
+  haloGrad.addColorStop(0.5, `rgba(255, 140, 40, ${0.25 * intensity})`)
   haloGrad.addColorStop(1, 'rgba(255, 100, 20, 0)')
   ctx.fillStyle = haloGrad
-  ctx.beginPath()
-  ctx.arc(px, py, haloR, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.beginPath(); ctx.arc(px, py, haloR, 0, Math.PI * 2); ctx.fill()
 
-  // Flame layers — three flickering tongues, hottest in the middle.
-  const flameLayers = [
-    { dx: 0, h: 9, w: 4, color1: '#fff09a', color2: '#ffae40', freq: 0.012, phase: 0 },
-    { dx: -3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 1.3 },
-    { dx: 3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 2.7 },
-  ]
-  for (const f of flameLayers) {
-    const wobble = Math.sin(timeMs * f.freq + f.phase) * 1.2
-    const fheight = (f.h + Math.sin(timeMs * f.freq * 0.7 + f.phase) * 1.5) * zoom
-    const fwidth = f.w * zoom
-    const fx = offsetX + (cx + f.dx) * zoom + wobble
-    const fy = offsetY + baseY * zoom
-    // Tapered rectangle (wider at base, narrower up top).
-    for (let i = 0; i < 8; i++) {
-      const t = i / 8
-      const w = fwidth * (1 - t * 0.7)
-      const y = fy - fheight * t
-      const blend = t  // 0 base, 1 top
-      const color = blend < 0.5 ? f.color2 : f.color1
-      ctx.fillStyle = color
-      ctx.fillRect(fx - w / 2, y, w, Math.max(1, fheight / 8))
+  if (phase !== 'egg') {
+    const flameLayers = [
+      { dx: 0, h: 9, w: 4, color1: '#fff09a', color2: '#ffae40', freq: 0.012, phase: 0 },
+      { dx: -3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 1.3 },
+      { dx: 3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 2.7 },
+    ]
+    for (const f of flameLayers) {
+      const wobble = Math.sin(timeMs * f.freq + f.phase) * 1.2
+      const fheight = ((f.h * (0.4 + 0.6 * intensity)) + Math.sin(timeMs * f.freq * 0.7 + f.phase) * 1.5) * zoom
+      const fwidth = f.w * (0.6 + 0.4 * intensity) * zoom
+      const fx = offsetX + (cx + f.dx) * zoom + wobble
+      const fy = offsetY + baseY * zoom
+      for (let i = 0; i < 8; i++) {
+        const t = i / 8
+        const w = fwidth * (1 - t * 0.7)
+        const y = fy - fheight * t
+        ctx.fillStyle = t < 0.5 ? f.color2 : f.color1
+        ctx.fillRect(fx - w / 2, y, w, Math.max(1, fheight / 8))
+      }
     }
+  } else {
+    drawEgg(ctx, px, py, zoom, timeMs)
   }
 
-  // Rising sparks — small bright pixels drifting up.
-  for (let i = 0; i < 8; i++) {
-    const phase = ((timeMs * 0.0009) + i * 0.13) % 1
-    const sy = py - phase * 22 * zoom
-    const sx = px + Math.sin(phase * Math.PI * 4 + i) * 4 * zoom
-    const a = (1 - phase) * 0.9
-    ctx.fillStyle = `rgba(255, ${180 + Math.floor(60 * (1 - phase))}, 60, ${a})`
+  const sparkCount = Math.round(2 + 6 * intensity)
+  for (let i = 0; i < sparkCount; i++) {
+    const ph = ((timeMs * 0.0009) + i * 0.13) % 1
+    const sy = py - ph * 22 * zoom
+    const sx = px + Math.sin(ph * Math.PI * 4 + i) * 4 * zoom
+    const a = (1 - ph) * 0.9 * intensity
+    ctx.fillStyle = `rgba(255, ${180 + Math.floor(60 * (1 - ph))}, 60, ${a})`
     ctx.fillRect(sx, sy, cell, cell)
   }
   ctx.restore()
@@ -1396,6 +1447,28 @@ export function renderPlantingProgress(
     ctx.globalAlpha = 1
   }
   ctx.restore()
+}
+
+/** A small log sprite above any character currently carrying wood to the campfire. */
+function renderCarriedLogs(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number, offsetY: number, zoom: number,
+): void {
+  const spriteH = 24 // character sprite height in world px
+  for (const ch of characters) {
+    if (!ch.carrying) continue
+    const px = offsetX + (ch.x - 5) * zoom
+    const py = offsetY + (ch.y - spriteH - 2) * zoom
+    const w = 10 * zoom, h = 3 * zoom
+    ctx.save()
+    ctx.fillStyle = '#6b4a2b'
+    ctx.fillRect(px, py, w, h)
+    ctx.fillStyle = '#caa06a'
+    ctx.fillRect(px, py, 2 * zoom, h)
+    ctx.fillRect(px + w - 2 * zoom, py, 2 * zoom, h)
+    ctx.restore()
+  }
 }
 
 /** Small mushroom clusters deterministically scattered along the hedge edges (cols 1-2 and
@@ -2059,6 +2132,13 @@ export interface SelectionRenderState {
   characters: Map<number, Character>
 }
 
+export interface CampfireRenderState {
+  fireTile: { col: number; row: number } | null
+  woodLevel: number
+  woodMax: number
+  phase: 'growing' | 'full' | 'dancing' | 'burning_down' | 'egg' | 'hatching'
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -2082,6 +2162,7 @@ export function renderFrame(
   plantedFlowers?: Map<string, string>,
   plantingDurationMs?: number,
   animals?: ForestAnimal[],
+  campfire?: CampfireRenderState,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight)
@@ -2156,10 +2237,13 @@ export function renderFrame(
   renderChargingPCs(ctx, activePCTiles ?? [], offsetX, offsetY, zoom, timeMs ?? performance.now())
 
   // Campfire flames — drawn over scene so flames lick up above the pit.
-  renderCampfireFlames(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now())
+  renderCampfireFlames(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
 
   // Planting-in-progress sprout above any character currently planting.
   renderPlantingProgress(ctx, characters, offsetX, offsetY, zoom, plantingDurationMs ?? 2200)
+
+  // Carried logs — drawn above the character sprite for agents fetching wood.
+  renderCarriedLogs(ctx, characters, offsetX, offsetY, zoom)
 
   // Forest animals — drawn over the scene so they're always visible (small sprites).
   renderAnimals(ctx, animals, offsetX, offsetY, zoom, timeMs ?? performance.now())

@@ -275,6 +275,9 @@ export class OfficeState {
   /** Ordered clockwise dance-ring slots around the fire. */
   private danceSlots: Tile[] = []
 
+  /** Returns the fire tile position for the campfire render state (null if no campfire in layout). */
+  getCampfireFireTile(): { col: number; row: number } | null { return this.fireTile }
+
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
