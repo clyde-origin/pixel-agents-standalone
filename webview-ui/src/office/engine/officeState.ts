@@ -655,6 +655,8 @@ export class OfficeState {
     const ch = this.characters.get(id)
     if (!ch) return
     if (ch.matrixEffect === 'despawn') return // already despawning
+    // Release campfire-specific bookkeeping (woodReserved, dancers) before tearing down.
+    this.cancelCampfireTrip(ch)
     // Release any field-trip tile they were holding
     if (ch.tripTile) {
       this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
@@ -853,6 +855,8 @@ export class OfficeState {
         this.subagentMeta.delete(id)
         return
       }
+      // Release campfire-specific bookkeeping before despawn.
+      this.cancelCampfireTrip(ch)
       if (ch.seatId) {
         const seat = this.seats.get(ch.seatId)
         if (seat) seat.assigned = false
@@ -884,6 +888,8 @@ export class OfficeState {
             toRemove.push(key)
             continue
           }
+          // Release campfire-specific bookkeeping before despawn.
+          this.cancelCampfireTrip(ch)
           if (ch.seatId) {
             const seat = this.seats.get(ch.seatId)
             if (seat) seat.assigned = false
@@ -908,6 +914,23 @@ export class OfficeState {
   /** Look up the sub-agent character ID for a given parent+toolId, or null */
   getSubagentId(parentAgentId: number, parentToolId: string): number | null {
     return this.subagentIdMap.get(`${parentAgentId}:${parentToolId}`) ?? null
+  }
+
+  /** Release all campfire bookkeeping an agent holds — called when it resumes real work
+   *  or despawns. Frees the wood reservation / dance-slot membership / trip-tile reservation.
+   *  Does NOT clear ch.danced (the transformation is permanent). */
+  private cancelCampfireTrip(ch: Character): void {
+    if (ch.tripMode === 'campfire_wood') {
+      this.campfire = { ...this.campfire, woodReserved: Math.max(0, this.campfire.woodReserved - 1) }
+      ch.carrying = false
+      ch.woodDropTimer = undefined
+    }
+    if (ch.tripMode === 'campfire_dance') {
+      this.campfire = { ...this.campfire, dancers: this.campfire.dancers.filter((d) => d !== ch.id) }
+    }
+    if ((ch.tripMode === 'campfire_wood' || ch.tripMode === 'campfire_dance') && ch.tripTile) {
+      this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+    }
   }
 
   setAgentActive(id: number, active: boolean): void {
@@ -935,15 +958,7 @@ export class OfficeState {
         }
         // Re-activated mid-ritual — release campfire bookkeeping (the trip tile itself is
         // freed by endTrip on the next update tick once desiredTripFor returns null).
-        if (ch.tripMode === 'campfire_wood') {
-          // woodReserved is held for the whole run (reserved at trip start) — release it.
-          this.campfire = { ...this.campfire, woodReserved: Math.max(0, this.campfire.woodReserved - 1) }
-          ch.carrying = false
-          ch.woodDropTimer = undefined
-        }
-        if (ch.tripMode === 'campfire_dance') {
-          this.campfire = { ...this.campfire, dancers: this.campfire.dancers.filter((d) => d !== id) }
-        }
+        this.cancelCampfireTrip(ch)
       }
       this.rebuildFurnitureInstances()
     }
@@ -1651,9 +1666,16 @@ export class OfficeState {
       // Let wood-fetchers finish their run (they hold a woodReserved slot); they'll
       // become idle and join the dance on a later pass.
       if (ch.tripMode === 'campfire_wood') continue
+      // Don't poach agents committed to multi-player activities — let matches finish naturally.
+      if (ch.tripMode === 'ping_pong' || ch.tripMode === 'chess' || ch.tripMode === 'pool') continue
       if (this.findFreeDanceSlot(ch) === null) continue
       // Free any current trip tile before reassigning.
-      if (ch.tripTile) { this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`); ch.tripTile = null; ch.tripMode = null }
+      if (ch.tripTile) {
+        if (ch.tripMode === 'planting') this.claimedPlantTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+        this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+        ch.tripTile = null
+        ch.tripMode = null
+      }
       if (this.startTrip(ch, 'campfire_dance')) { dancers.push(ch.id); changed = true }
     }
     if (changed) this.campfire = { ...this.campfire, dancers }
