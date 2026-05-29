@@ -29,7 +29,9 @@ export const ROTATE_INTERVAL_MS = 3_000
 export const BURNDOWN_DURATION_MS = 4_000
 export const HATCH_DELAY_MS = 15_000
 export const DROP_DURATION_MS = 1_500
-export const MAX_DANCERS = 8
+/** Hard cap as a safety net — `computeDanceSlots` expands rings outward until either
+ *  enough walkable tiles are found or this many slots are collected. */
+export const MAX_DANCERS = 64
 
 // 3×3 core occupied by the fire + stumps (relative to the fire tile).
 function inCore(fire: Tile, col: number, row: number): boolean {
@@ -76,26 +78,34 @@ export function resolveWoodpileTile(
   return null
 }
 
-/** Ordered (clockwise) ring of up to MAX_DANCERS walkable tiles around the 3×3 core. */
+/** Ordered ring of walkable tiles around the 3×3 core, expanding outward shell-by-shell
+ *  until MAX_DANCERS is reached or shells are exhausted. Tiles within a shell are sorted
+ *  clockwise; outer shells follow inner ones, so a partially-filled ring stays tight. */
 export function computeDanceSlots(
   fire: Tile,
   isWalkable: (col: number, row: number) => boolean,
 ): Tile[] {
-  // The four immediate edge tiles are wood-drop tiles inside the 3×3 core; dancers
-  // ring the fire on the next shell out (Chebyshev distance 2), so we enumerate only
-  // that shell — every tile on it is outside the core by construction.
-  const candidates: Tile[] = []
-  for (let dc = -2; dc <= 2; dc++) {
-    for (let dr = -2; dr <= 2; dr++) {
-      if (Math.max(Math.abs(dc), Math.abs(dr)) !== 2) continue
-      const col = fire.col + dc
-      const row = fire.row + dr
-      if (!isWalkable(col, row)) continue
-      candidates.push({ col, row })
+  const slots: Tile[] = []
+  // Dancers start on shell 2 (just outside the wood-drop tiles in the 3×3 core) and
+  // expand outward. Cap shells at a generous depth so even a packed office finds a seat.
+  for (let shell = 2; shell <= 8 && slots.length < MAX_DANCERS; shell++) {
+    const ring: Tile[] = []
+    for (let dc = -shell; dc <= shell; dc++) {
+      for (let dr = -shell; dr <= shell; dr++) {
+        if (Math.max(Math.abs(dc), Math.abs(dr)) !== shell) continue
+        const col = fire.col + dc
+        const row = fire.row + dr
+        if (!isWalkable(col, row)) continue
+        ring.push({ col, row })
+      }
+    }
+    ring.sort((a, b) => angleCW(fire, a) - angleCW(fire, b))
+    for (const t of ring) {
+      if (slots.length >= MAX_DANCERS) break
+      slots.push(t)
     }
   }
-  candidates.sort((a, b) => angleCW(fire, a) - angleCW(fire, b))
-  return candidates.slice(0, MAX_DANCERS)
+  return slots
 }
 
 function angleCW(fire: Tile, t: Tile): number {

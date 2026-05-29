@@ -227,6 +227,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           woodLevel: officeState.campfire.woodLevel,
           woodMax: WOOD_TO_FULL,
           phase: officeState.campfire.phase,
+          phaseStartMs: officeState.campfire.phaseStartMs,
         }
 
         const { offsetX, offsetY } = renderFrame(

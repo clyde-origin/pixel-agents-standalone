@@ -253,10 +253,41 @@ export class OfficeState {
     targetY: number
     /** Timestamp (performance.now ms) at which to pick a new random hop target. */
     nextHopAt: number
+    /** Baby-dragon free-roam behavior. Undefined for rabbits/squirrels.
+     *  - 'momma_pet': cluster near the sleeping mother dragon.
+     *  - 'bookshelf': perch on a specific bookshelf, occasional small hops.
+     *  - 'roamer':    drift across the whole map in long lazy arcs.
+     *  - 'hunter':    stalk and eat rabbits; idles otherwise. */
+    role?: 'momma_pet' | 'bookshelf' | 'roamer' | 'hunter'
+    /** For 'hunter' dragons: the next time (performance.now ms) they may pick a new
+     *  rabbit to eat. Throttles predation so the meadow doesn't go silent in a minute. */
+    nextHuntAt?: number
+    /** Hunter is mid-pounce on a rabbit; once `eatingUntilMs` passes the rabbit is
+     *  removed and the dragon rolls back to idle roaming. */
+    eatingUntilMs?: number
   }> = []
   private static readonly ANIMAL_HOP_RADIUS_PX = 32   // ~2 tiles around home
   private static readonly ANIMAL_HOP_MIN_MS = 1500
   private static readonly ANIMAL_HOP_MAX_MS = 3500
+  /** How close (world px) a hunter must get before it "eats" its rabbit target. */
+  private static readonly DRAGON_EAT_RANGE_PX = 6
+  /** Cooldown between hunter kills so the rabbit population isn't wiped instantly. */
+  private static readonly DRAGON_HUNT_COOLDOWN_MS = 25_000
+  /** How long the "eating" pause lasts before the hunter re-engages. */
+  private static readonly DRAGON_EAT_DURATION_MS = 1800
+  /** How long after being eaten until a rabbit respawns at its original home. Keeps the
+   *  meadow populated even with multiple hunters in the brood. */
+  private static readonly RABBIT_RESPAWN_MS = 35_000
+  /** Pending rabbit respawns: each entry resurrects one rabbit at the given home after
+   *  `at` ms (performance.now timeframe). */
+  private rabbitRespawnQueue: Array<{
+    homeX: number; homeY: number; watchX: number; watchY: number; at: number;
+  }> = []
+  /** Bookshelf furniture tiles in the layout — dragons perch here. Resolved per-layout. */
+  private bookshelfTiles: Array<{ col: number; row: number }> = []
+  /** Center (world px) of the sleeping mother dragon — momma_pets cluster here. */
+  private static readonly MOMMA_DRAGON_CENTER_X = (13 + 3) * 16    // baseX=col 13, body span ~6 tiles
+  private static readonly MOMMA_DRAGON_CENTER_Y = (0 + 3) * 16     // baseY=row 0, body span ~5 tiles
   private static readonly ANIMAL_DEFS = [
     // Rabbit in upper-left meadow → watches from west of the chairs.
     { kind: 'rabbit' as const,   homeCol: 3,  homeRow: 9,  watchCol: 6,  watchRow: 6 },
@@ -398,6 +429,12 @@ export class OfficeState {
 
   /** Resolve fire/woodpile/dance-ring tiles from the current layout + walkability. */
   private resolveCampfireGeometry(): void {
+    // Bookshelves are layout furniture — refresh the perch list whenever the layout
+    // changes so newly-added shelves are immediately available to baby dragons.
+    this.bookshelfTiles = this.layout.furniture
+      .filter((f) => (f.type as string) === 'bookshelf')
+      .map((f) => ({ col: f.col, row: f.row }))
+
     this.fireTile = resolveFireTile(this.layout)
     if (!this.fireTile) {
       this.woodpileTile = null
@@ -1584,17 +1621,35 @@ export class OfficeState {
     return count >= 4
   }
 
-  /** Lerp animals toward their current target — randomly-picked nearby tiles when idling,
-   *  or the watch position when all 4 hero PCs are occupied. They visibly hop around. */
+  /** Lerp animals toward their current target. Rabbits/squirrels hop near home (or to
+   *  the merge-watch spot when all 4 hero PCs are firing). Baby dragons get role-driven
+   *  behavior: cling to momma, perch on bookshelves, drift across the meadow as
+   *  roamers, or stalk and eat rabbits as hunters. */
   private tickAnimals(dt: number, nowMs: number): void {
     if (this.animals.length === 0) return
     const watching = this.isAllHeroOccupied()
-    const lerpRate = Math.min(1, dt * 2.4)
+    // Hunters eat in-place removals — collect indices first, splice after the loop so
+    // we don't shift the array while iterating.
+    const toRemove: number[] = []
     for (let i = 0; i < this.animals.length; i++) {
       const a = this.animals[i]
+      const lerpRate = Math.min(1, dt * (a.kind === 'baby-dragon' && a.role === 'roamer' ? 1.6 : 2.4))
       let tx: number
       let ty: number
-      if (watching && a.kind !== 'baby-dragon') {
+
+      if (a.kind === 'baby-dragon') {
+        // Pause for the eating animation — dragon stays put on its rabbit.
+        if (a.eatingUntilMs !== undefined && nowMs < a.eatingUntilMs) {
+          tx = a.x
+          ty = a.y
+        } else {
+          if (a.eatingUntilMs !== undefined && nowMs >= a.eatingUntilMs) {
+            a.eatingUntilMs = undefined
+            a.nextHopAt = nowMs + 500
+          }
+          ;({ tx, ty } = this.dragonTarget(a, nowMs, toRemove, i))
+        }
+      } else if (watching) {
         tx = a.watchX
         ty = a.watchY
         // Push next random hop slightly into the future so they don't bolt away the
@@ -1604,7 +1659,7 @@ export class OfficeState {
         // Pick a new random target every so often (or when we've reached the current one).
         const reached = Math.abs(a.targetX - a.x) < 1 && Math.abs(a.targetY - a.y) < 1
         if (nowMs >= a.nextHopAt || reached) {
-          const r = a.kind === 'baby-dragon' ? 6 : OfficeState.ANIMAL_HOP_RADIUS_PX
+          const r = OfficeState.ANIMAL_HOP_RADIUS_PX
           a.targetX = a.homeX + (Math.random() - 0.5) * r * 2
           a.targetY = a.homeY + (Math.random() - 0.5) * r * 2
           const span = OfficeState.ANIMAL_HOP_MAX_MS - OfficeState.ANIMAL_HOP_MIN_MS
@@ -1613,12 +1668,141 @@ export class OfficeState {
         tx = a.targetX
         ty = a.targetY
       }
+
       const dx = tx - a.x
       const dy = ty - a.y
       a.x += dx * lerpRate
       a.y += dy * lerpRate
       if (Math.abs(dx) > 0.4) a.facing = dx > 0 ? 'right' : 'left'
     }
+    if (toRemove.length > 0) {
+      // Remove in descending order so indices stay valid as we splice.
+      toRemove.sort((p, q) => q - p)
+      for (const idx of toRemove) this.animals.splice(idx, 1)
+    }
+    // Respawn any rabbits whose timer has elapsed.
+    if (this.rabbitRespawnQueue.length > 0) {
+      const ready: typeof this.rabbitRespawnQueue = []
+      const pending: typeof this.rabbitRespawnQueue = []
+      for (const entry of this.rabbitRespawnQueue) {
+        if (nowMs >= entry.at) ready.push(entry)
+        else pending.push(entry)
+      }
+      this.rabbitRespawnQueue = pending
+      for (const r of ready) {
+        this.animals.push({
+          kind: 'rabbit',
+          homeX: r.homeX, homeY: r.homeY,
+          watchX: r.watchX, watchY: r.watchY,
+          x: r.homeX, y: r.homeY,
+          facing: 'right',
+          targetX: r.homeX, targetY: r.homeY,
+          nextHopAt: nowMs + Math.random() * 2000,
+        })
+      }
+    }
+  }
+
+  /** Compute this baby dragon's current target tile based on its role. May mutate
+   *  per-dragon state (re-pick a roam target, latch onto a rabbit, eat one), and may
+   *  append an index to `toRemove` when a rabbit gets eaten. */
+  private dragonTarget(
+    a: NonNullable<OfficeState['animals'][number]>,
+    nowMs: number,
+    toRemove: number[],
+    _selfIndex: number,
+  ): { tx: number; ty: number } {
+    const reached = Math.abs(a.targetX - a.x) < 1 && Math.abs(a.targetY - a.y) < 1
+
+    switch (a.role) {
+      case 'momma_pet': {
+        if (nowMs >= a.nextHopAt || reached) {
+          // Tight hops around the assigned snuggle spot on momma.
+          a.targetX = a.homeX + (Math.random() - 0.5) * 12
+          a.targetY = a.homeY + (Math.random() - 0.5) * 8
+          a.nextHopAt = nowMs + 2500 + Math.random() * 2500
+        }
+        break
+      }
+
+      case 'bookshelf': {
+        if (nowMs >= a.nextHopAt || reached) {
+          // Mostly perched still; occasional 1-2 px shuffle along the shelf top.
+          a.targetX = a.homeX + (Math.random() - 0.5) * 6
+          a.targetY = a.homeY + (Math.random() - 0.5) * 3
+          a.nextHopAt = nowMs + 3500 + Math.random() * 3500
+        }
+        break
+      }
+
+      case 'roamer': {
+        if (nowMs >= a.nextHopAt || reached) {
+          // Pick a fresh meadow point and drift there over several seconds.
+          const t = OfficeState.pickMeadowPoint(this.layout)
+          a.targetX = t.x
+          a.targetY = t.y
+          a.nextHopAt = nowMs + 4000 + Math.random() * 4000
+        }
+        break
+      }
+
+      case 'hunter': {
+        // If on cooldown, just orbit home like a roamer at a smaller radius.
+        const onCooldown = (a.nextHuntAt ?? 0) > nowMs
+        if (!onCooldown) {
+          // Find nearest rabbit and dive at it.
+          let bestIdx = -1
+          let bestDistSq = Infinity
+          for (let i = 0; i < this.animals.length; i++) {
+            const other = this.animals[i]
+            if (other.kind !== 'rabbit') continue
+            const dx = other.x - a.x
+            const dy = other.y - a.y
+            const d2 = dx * dx + dy * dy
+            if (d2 < bestDistSq) { bestDistSq = d2; bestIdx = i }
+          }
+          if (bestIdx >= 0) {
+            const rabbit = this.animals[bestIdx]
+            a.targetX = rabbit.x
+            a.targetY = rabbit.y
+            // Close enough? Eat it.
+            const dist = Math.sqrt(bestDistSq)
+            if (dist <= OfficeState.DRAGON_EAT_RANGE_PX) {
+              toRemove.push(bestIdx)
+              // Queue the rabbit to respawn at its original home so the meadow refills.
+              this.rabbitRespawnQueue.push({
+                homeX: rabbit.homeX, homeY: rabbit.homeY,
+                watchX: rabbit.watchX, watchY: rabbit.watchY,
+                at: nowMs + OfficeState.RABBIT_RESPAWN_MS,
+              })
+              a.eatingUntilMs = nowMs + OfficeState.DRAGON_EAT_DURATION_MS
+              a.nextHuntAt = nowMs + OfficeState.DRAGON_HUNT_COOLDOWN_MS
+              a.nextHopAt = nowMs + OfficeState.DRAGON_EAT_DURATION_MS + 800
+            }
+            break
+          }
+        }
+        // No rabbit available or cooling down — drift around home.
+        if (nowMs >= a.nextHopAt || reached) {
+          a.targetX = a.homeX + (Math.random() - 0.5) * 32
+          a.targetY = a.homeY + (Math.random() - 0.5) * 24
+          a.nextHopAt = nowMs + 2000 + Math.random() * 2500
+        }
+        break
+      }
+
+      default: {
+        // No role assigned (shouldn't happen for hatched dragons, but defensive) — tight
+        // hops around home like the original behavior.
+        if (nowMs >= a.nextHopAt || reached) {
+          a.targetX = a.homeX + (Math.random() - 0.5) * 12
+          a.targetY = a.homeY + (Math.random() - 0.5) * 12
+          a.nextHopAt = nowMs + 1500 + Math.random() * 2000
+        }
+        break
+      }
+    }
+    return { tx: a.targetX, ty: a.targetY }
   }
 
   private tickCampfire(dt: number, nowMs: number): void {
@@ -1735,26 +1919,95 @@ export class OfficeState {
     return n
   }
 
-  /** Hatch one baby dragon, fanned out around the fire so a brood clusters. */
+  /** Hatch one baby dragon. The first hatchlings stick close to the fire; later ones
+   *  branch out — perching on bookshelves, snuggling up to the sleeping mother dragon,
+   *  free-roaming the meadow, or stalking rabbits. */
   private hatchDragon(): void {
     if (!this.fireTile) return
     const broodCount = this.animals.filter((a) => a.kind === 'baby-dragon').length
-    // Golden-angle fan so each new dragon sits at a fresh spot around the fire.
-    const angle = broodCount * 2.39996
-    const radiusPx = TILE_SIZE * 1.6
     const fx = this.fireTile.col * TILE_SIZE + TILE_SIZE / 2
     const fy = this.fireTile.row * TILE_SIZE + TILE_SIZE / 2
-    const homeX = fx + Math.cos(angle) * radiusPx
-    const homeY = fy + Math.sin(angle) * radiusPx
+
+    // Role rotation, weighted so most stay near the fire/momma but every brood adds
+    // some perchers, roamers, and the occasional hunter.
+    const role = OfficeState.pickDragonRole(broodCount)
+    let homeX = fx
+    let homeY = fy
+    if (role === 'momma_pet') {
+      // Snuggled up against the mother. Small jitter so multiple pets fan out a bit.
+      const jitterAngle = broodCount * 2.39996
+      homeX = OfficeState.MOMMA_DRAGON_CENTER_X + Math.cos(jitterAngle) * TILE_SIZE * 0.6
+      homeY = OfficeState.MOMMA_DRAGON_CENTER_Y + Math.sin(jitterAngle) * TILE_SIZE * 0.4
+    } else if (role === 'bookshelf' && this.bookshelfTiles.length > 0) {
+      // Each bookshelf perch is unique — cycle through the available shelves first.
+      const shelfCount = this.bookshelfTiles.length
+      const usedShelves = new Set(
+        this.animals
+          .filter((a) => a.kind === 'baby-dragon' && a.role === 'bookshelf')
+          .map((a) => `${Math.round(a.homeX)},${Math.round(a.homeY)}`),
+      )
+      let chosen = this.bookshelfTiles[broodCount % shelfCount]
+      for (const t of this.bookshelfTiles) {
+        const key = `${t.col * TILE_SIZE + TILE_SIZE / 2},${t.row * TILE_SIZE + TILE_SIZE / 2}`
+        if (!usedShelves.has(key)) { chosen = t; break }
+      }
+      homeX = chosen.col * TILE_SIZE + TILE_SIZE / 2
+      // Perched on TOP of the shelf — pull up a few pixels so they sit on the edge.
+      homeY = chosen.row * TILE_SIZE + TILE_SIZE / 2 - 4
+    } else if (role === 'roamer') {
+      // Initial roam target: a random meadow tile, drift refreshes on every hop.
+      const t = OfficeState.pickMeadowPoint(this.layout)
+      homeX = t.x
+      homeY = t.y
+    } else if (role === 'hunter') {
+      // Hunters orbit the fire by default and pick rabbits to chase opportunistically.
+      const angle = broodCount * 2.39996
+      const radius = TILE_SIZE * 3
+      homeX = fx + Math.cos(angle) * radius
+      homeY = fy + Math.sin(angle) * radius
+    } else {
+      // 'momma_pet' fallback (no bookshelves available, etc.) — circle the fire close.
+      const angle = broodCount * 2.39996
+      const radius = TILE_SIZE * 1.6
+      homeX = fx + Math.cos(angle) * radius
+      homeY = fy + Math.sin(angle) * radius
+    }
+
     this.animals.push({
       kind: 'baby-dragon',
       homeX, homeY,
-      watchX: homeX, watchY: homeY,   // dragons ignore the "watch" gather; keep == home
-      x: fx, y: fy,                   // born at the egg, then settles to home
-      facing: Math.cos(angle) >= 0 ? 'right' : 'left',
+      watchX: homeX, watchY: homeY,  // dragons ignore the merge-watch gather
+      x: fx, y: fy,                  // born at the egg, then drifts to home
+      facing: homeX >= fx ? 'right' : 'left',
       targetX: homeX, targetY: homeY,
       nextHopAt: performance.now() + Math.random() * 2000,
+      role,
+      nextHuntAt: role === 'hunter' ? performance.now() + 6000 + Math.random() * 8000 : undefined,
     })
+  }
+
+  /** Deterministic-ish role weights per brood ordinal. Early dragons hug the fire, the
+   *  rest spread out so the meadow stays interesting as the brood grows. */
+  private static pickDragonRole(broodCount: number): 'momma_pet' | 'bookshelf' | 'roamer' | 'hunter' {
+    // Fixed first few so the first hatchlings look distinct.
+    if (broodCount === 0) return 'momma_pet'
+    if (broodCount === 1) return 'bookshelf'
+    if (broodCount === 2) return 'roamer'
+    if (broodCount === 3) return 'hunter'
+    // Beyond that: weighted random — 35% momma_pet, 25% bookshelf, 25% roamer, 15% hunter.
+    const r = Math.random()
+    if (r < 0.35) return 'momma_pet'
+    if (r < 0.60) return 'bookshelf'
+    if (r < 0.85) return 'roamer'
+    return 'hunter'
+  }
+
+  /** Random meadow-ish point inside the layout — used to seed roamers and pick new
+   *  drift targets. Not walkability-checked because dragons fly. */
+  private static pickMeadowPoint(layout: OfficeLayout): { x: number; y: number } {
+    const c = 2 + Math.floor(Math.random() * Math.max(1, layout.cols - 4))
+    const r = 2 + Math.floor(Math.random() * Math.max(1, layout.rows - 4))
+    return { x: c * TILE_SIZE + TILE_SIZE / 2, y: r * TILE_SIZE + TILE_SIZE / 2 }
   }
 
   /** True when this idle agent has a partner available and at least one chess slot is free. */

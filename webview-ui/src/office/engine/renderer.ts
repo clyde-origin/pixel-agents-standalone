@@ -96,32 +96,41 @@ interface ZDrawable {
 }
 
 /** Permanent "danced" look: bare-skin chest patch + loincloth band, painted over the
- *  lower torso of an already-drawn character sprite. `originX/originY` are the sprite's
- *  top-left in device px; `pxW/pxH` are the sprite's SOURCE pixel dimensions. */
+ *  lower torso of an already-drawn character sprite. Coordinates are in source-sprite
+ *  pixel rows for a 16×32 character cell, derived empirically from char_0.png:
+ *    head     rows 3-17
+ *    torso    rows 18-24  (typing pose shifts ↓3 → rows 21-26)
+ *    belt     row 25                                  → row 27
+ *    pants    rows 26-28                              → rows 28-30
+ *  `originX/originY` are the sprite's top-left in device px. */
 function drawLoinclothOverlay(
   ctx: CanvasRenderingContext2D,
   originX: number, originY: number,
-  pxW: number, pxH: number,
   zoom: number,
+  isTyping: boolean,
 ): void {
-  // Torso occupies roughly the vertical middle of the sprite (below head, above legs).
-  const chestTop = originY + Math.round(pxH * 0.42) * zoom
-  const chestH = Math.round(pxH * 0.16) * zoom
-  const hipTop = originY + Math.round(pxH * 0.58) * zoom
-  const hipH = Math.max(1, Math.round(pxH * 0.10) * zoom)
-  // Inset from the sprite edges so we don't paint over the arms' outer edge / outline.
-  const inset = Math.round(pxW * 0.19) * zoom
-  const x = originX + inset
-  const w = pxW * zoom - inset * 2
+  const yShift = isTyping ? 3 : 0
+  const cell = zoom
   ctx.save()
-  // Bare chest (skin) — flat mid skin with a 1px shadow line for a little form.
+  // Bare chest (skin) covers the shirt area (torso rows).
   ctx.fillStyle = '#E9A384'
-  ctx.fillRect(x, chestTop, w, chestH)
+  ctx.fillRect(originX + 3 * cell, originY + (18 + yShift) * cell, 10 * cell, 6 * cell)
+  // Subtle shadow band at chest bottom for a little form.
   ctx.fillStyle = '#C5896E'
-  ctx.fillRect(x, chestTop + chestH - Math.max(1, Math.round(zoom)), w, Math.max(1, Math.round(zoom)))
-  // Loincloth band.
+  ctx.fillRect(originX + 3 * cell, originY + (23 + yShift) * cell, 10 * cell, cell)
+  // Nipple dots — tiny, 1 cell each.
+  ctx.fillStyle = '#7A4030'
+  ctx.fillRect(originX + 5 * cell, originY + (21 + yShift) * cell, cell, cell)
+  ctx.fillRect(originX + 10 * cell, originY + (21 + yShift) * cell, cell, cell)
+  // Loincloth — leather band over the pants/hip area.
   ctx.fillStyle = '#6B4A2B'
-  ctx.fillRect(x, hipTop, w, hipH)
+  ctx.fillRect(originX + 3 * cell, originY + (25 + yShift) * cell, 10 * cell, 3 * cell)
+  // Knotted front flap dangling lower.
+  ctx.fillStyle = '#8A6238'
+  ctx.fillRect(originX + 6 * cell, originY + (28 + yShift) * cell, 4 * cell, 2 * cell)
+  // Belt highlight (1px lighter trim along top of band).
+  ctx.fillStyle = '#A07A50'
+  ctx.fillRect(originX + 3 * cell, originY + (25 + yShift) * cell, 10 * cell, cell)
   ctx.restore()
 }
 
@@ -220,10 +229,9 @@ export function renderScene(
       })
     }
 
-    // Capture danced flag + sprite source dims for the overlay closure.
+    // Capture danced flag + typing state for the overlay closure.
     const chDanced = ch.danced === true
-    const spritePxW = cached.width / zoom
-    const spritePxH = cached.height / zoom
+    const chIsTyping = ch.state === CharacterState.TYPE && !ch.stretching
     const chDrawX = drawX
     const chDrawY = drawY
 
@@ -232,7 +240,7 @@ export function renderScene(
       draw: (c) => {
         c.drawImage(cached, chDrawX, chDrawY)
         if (chDanced) {
-          drawLoinclothOverlay(c, chDrawX, chDrawY, spritePxW, spritePxH, zoom)
+          drawLoinclothOverlay(c, chDrawX, chDrawY, zoom, chIsTyping)
         }
       },
     })
@@ -1201,10 +1209,15 @@ export function renderCampfireFlames(
 ): void {
   const tile = campfire?.fireTile ?? CAMPFIRE_TILE
   const phase = campfire?.phase ?? 'growing'
-  const level = campfire ? campfire.woodLevel / Math.max(1, campfire.woodMax) : 1
-  const intensity = phase === 'egg' ? 0.15
-    : (phase === 'growing' || phase === 'full' || phase === 'dancing') ? 0.35 + 0.65 * level
-    : 0.5 // burning_down / hatching (brief transient phases)
+  const woodMax = campfire?.woodMax ?? 8
+  const woodLevel = campfire?.woodLevel ?? woodMax
+  const level = woodLevel / Math.max(1, woodMax)
+  // Fire scales hard with wood: a single log is a flicker, 8 logs is a bonfire.
+  // 'dancing' and 'full' both burn at peak; 'growing' is what scales.
+  const intensity = phase === 'egg' ? 0.12
+    : phase === 'growing' ? 0.08 + 1.4 * level
+    : phase === 'full' || phase === 'dancing' ? 1.6
+    : 0.6 // burning_down / hatching
   const { col, row } = tile
   const cx = (col * TILE_SIZE + TILE_SIZE / 2)
   const baseY = (row * TILE_SIZE + 7)
@@ -1212,26 +1225,32 @@ export function renderCampfireFlames(
   ctx.save()
 
   const halo = 0.85 + 0.15 * Math.sin(timeMs * 0.005)
-  const haloR = (8 + 10 * intensity) * zoom * halo
+  const haloR = (6 + 14 * intensity) * zoom * halo
   const px = offsetX + cx * zoom
   const py = offsetY + baseY * zoom
   const haloGrad = ctx.createRadialGradient(px, py, 0, px, py, haloR)
-  haloGrad.addColorStop(0, `rgba(255, 200, 80, ${0.55 * intensity + 0.15})`)
-  haloGrad.addColorStop(0.5, `rgba(255, 140, 40, ${0.25 * intensity})`)
+  haloGrad.addColorStop(0, `rgba(255, 200, 80, ${Math.min(0.85, 0.45 * intensity + 0.1)})`)
+  haloGrad.addColorStop(0.5, `rgba(255, 140, 40, ${0.22 * intensity})`)
   haloGrad.addColorStop(1, 'rgba(255, 100, 20, 0)')
   ctx.fillStyle = haloGrad
   ctx.beginPath(); ctx.arc(px, py, haloR, 0, Math.PI * 2); ctx.fill()
 
+  // Stacked logs at the base of the pit grow with wood count (visible even when not lit).
+  if (phase !== 'egg') {
+    drawWoodStack(ctx, px, py + 2 * zoom, zoom, woodLevel)
+  }
+
   if (phase !== 'egg') {
     const flameLayers = [
-      { dx: 0, h: 9, w: 4, color1: '#fff09a', color2: '#ffae40', freq: 0.012, phase: 0 },
-      { dx: -3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 1.3 },
-      { dx: 3, h: 6, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 2.7 },
+      { dx: 0, h: 11, w: 4, color1: '#fff09a', color2: '#ffae40', freq: 0.012, phase: 0 },
+      { dx: -3, h: 7, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 1.3 },
+      { dx: 3, h: 7, w: 3, color1: '#ffae40', color2: '#ff5020', freq: 0.014, phase: 2.7 },
     ]
     for (const f of flameLayers) {
       const wobble = Math.sin(timeMs * f.freq + f.phase) * 1.2
-      const fheight = ((f.h * (0.4 + 0.6 * intensity)) + Math.sin(timeMs * f.freq * 0.7 + f.phase) * 1.5) * zoom
-      const fwidth = f.w * (0.6 + 0.4 * intensity) * zoom
+      // Height scales nearly linearly with intensity, so 1 log = tiny flicker, 8 logs = tall flames.
+      const fheight = ((f.h * (0.15 + 0.85 * Math.min(1.2, intensity))) + Math.sin(timeMs * f.freq * 0.7 + f.phase) * 1.5) * zoom
+      const fwidth = f.w * (0.4 + 0.6 * Math.min(1.2, intensity)) * zoom
       const fx = offsetX + (cx + f.dx) * zoom + wobble
       const fy = offsetY + baseY * zoom
       for (let i = 0; i < 8; i++) {
@@ -1246,19 +1265,119 @@ export function renderCampfireFlames(
     drawEgg(ctx, px, py, zoom, timeMs)
   }
 
-  const sparkCount = Math.round(2 + 6 * intensity)
+  const sparkCount = Math.round(1 + 8 * intensity)
   for (let i = 0; i < sparkCount; i++) {
     const ph = ((timeMs * 0.0009) + i * 0.13) % 1
-    const sy = py - ph * 22 * zoom
+    const sy = py - ph * 24 * zoom
     const sx = px + Math.sin(ph * Math.PI * 4 + i) * 4 * zoom
-    const a = (1 - ph) * 0.9 * intensity
+    const a = (1 - ph) * 0.9 * Math.min(1, intensity)
     ctx.fillStyle = `rgba(255, ${180 + Math.floor(60 * (1 - ph))}, 60, ${a})`
     ctx.fillRect(sx, sy, cell, cell)
   }
   ctx.restore()
 }
 
+/** Stacked logs at the base of the campfire pit. Visible whether or not the fire
+ *  is lit — the pile grows tile-by-tile as agents drop wood. */
+function drawWoodStack(
+  ctx: CanvasRenderingContext2D,
+  px: number, py: number, zoom: number, woodLevel: number,
+): void {
+  if (woodLevel <= 0) return
+  const cell = Math.max(1, Math.round(zoom))
+  // Up to 3 rows of logs; each row holds 1-3 logs.
+  const rows: Array<{ dy: number; widths: number[] }> = [
+    { dy: 0, widths: [6, 5, 4] },
+    { dy: -2, widths: [5, 4] },
+    { dy: -4, widths: [4] },
+  ]
+  let drawn = 0
+  ctx.save()
+  for (const r of rows) {
+    if (drawn >= woodLevel) break
+    const logCount = Math.min(r.widths.length, woodLevel - drawn)
+    const totalWidth = r.widths.slice(0, logCount).reduce((s, w) => s + w, 0) + (logCount - 1)
+    let xCursor = px - (totalWidth / 2) * zoom
+    for (let i = 0; i < logCount; i++) {
+      const w = r.widths[i]
+      // Log barrel.
+      ctx.fillStyle = '#6E4322'
+      ctx.fillRect(xCursor, py + r.dy * zoom, w * zoom, 2 * zoom)
+      // End-cap rings (lighter).
+      ctx.fillStyle = '#8E5A33'
+      ctx.fillRect(xCursor, py + r.dy * zoom, cell, 2 * zoom)
+      ctx.fillRect(xCursor + (w - 1) * zoom, py + r.dy * zoom, cell, 2 * zoom)
+      // Top highlight strip for roundness.
+      ctx.fillStyle = '#9A6A40'
+      ctx.fillRect(xCursor + cell, py + r.dy * zoom, (w - 2) * zoom, cell)
+      xCursor += (w + 1) * zoom
+      drawn++
+      if (drawn >= woodLevel) break
+    }
+  }
+  ctx.restore()
+}
 
+/** Dim the entire canvas around the campfire while the ritual dance is on, leaving a
+ *  bright halo around the fire itself. Fades in over ~1.5s when entering 'dancing' and
+ *  out over ~1.5s when entering 'burning_down', so transitions don't pop. No-op for
+ *  every other phase. */
+export function renderDanceDim(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number, canvasH: number,
+  offsetX: number, offsetY: number,
+  zoom: number,
+  timeMs: number,
+  campfire?: CampfireRenderState,
+): void {
+  if (!campfire) return
+  const FADE_MS = 1500
+  const TARGET_ALPHA = 0.62
+  const elapsed = timeMs - campfire.phaseStartMs
+  let alpha = 0
+  if (campfire.phase === 'dancing') {
+    alpha = TARGET_ALPHA * Math.min(1, elapsed / FADE_MS)
+  } else if (campfire.phase === 'burning_down') {
+    alpha = TARGET_ALPHA * Math.max(0, 1 - elapsed / FADE_MS)
+  }
+  if (alpha <= 0.01) return
+
+  const tile = campfire.fireTile ?? CAMPFIRE_TILE
+  const cx = tile.col * TILE_SIZE + TILE_SIZE / 2
+  const baseY = tile.row * TILE_SIZE + 7
+  const px = offsetX + cx * zoom
+  const py = offsetY + baseY * zoom
+
+  // Radial gradient: transparent at the fire (so flames + nearby dancers stay lit),
+  // ramping to the target alpha out beyond the ring. Inner clear radius ~3 tiles,
+  // outer dim radius ~9 tiles — far enough that distant rings are clearly darkened.
+  const inner = TILE_SIZE * 3 * zoom
+  const outer = TILE_SIZE * 9 * zoom
+  // Slight breathing flicker keyed to the same cadence as the halo, so the dim
+  // pulses subtly with the bonfire.
+  const flicker = 0.92 + 0.08 * Math.sin(timeMs * 0.005)
+
+  ctx.save()
+  // First: a flat darkening layer covering everything outside the bright zone.
+  const fade = ctx.createRadialGradient(px, py, inner, px, py, outer)
+  fade.addColorStop(0, 'rgba(0, 0, 0, 0)')
+  fade.addColorStop(1, `rgba(8, 5, 24, ${alpha})`)
+  ctx.fillStyle = fade
+  ctx.fillRect(0, 0, canvasW, canvasH)
+  // Then: solid dim past the outer radius so distant tiles aren't suddenly bright.
+  ctx.fillStyle = `rgba(8, 5, 24, ${alpha})`
+  ctx.beginPath()
+  ctx.rect(0, 0, canvasW, canvasH)
+  ctx.arc(px, py, outer, 0, Math.PI * 2, true)
+  ctx.fill('evenodd')
+  // Warm firelight wash over the inner zone — boosts the bonfire's reach.
+  const warm = ctx.createRadialGradient(px, py, 0, px, py, inner * flicker)
+  warm.addColorStop(0, `rgba(255, 160, 60, ${0.32 * alpha / TARGET_ALPHA})`)
+  warm.addColorStop(1, 'rgba(255, 100, 20, 0)')
+  ctx.fillStyle = warm
+  ctx.fillRect(0, 0, canvasW, canvasH)
+  ctx.restore()
+}
 
 /** Slanted warm sunlight beam streaming from the upper-right of the canvas across the
  *  meadow. Subtle drift over time so it feels alive rather than static. */
@@ -2177,6 +2296,9 @@ export interface CampfireRenderState {
   woodLevel: number
   woodMax: number
   phase: 'growing' | 'full' | 'dancing' | 'burning_down' | 'egg' | 'hatching'
+  /** performance.now() ms at which the current phase began — used to fade the dim
+   *  overlay in/out at the dance boundaries. */
+  phaseStartMs: number
 }
 
 export function renderFrame(
@@ -2276,9 +2398,6 @@ export function renderFrame(
   // regardless of whether anyone is active, so empty hero PCs always look alive.
   renderChargingPCs(ctx, activePCTiles ?? [], offsetX, offsetY, zoom, timeMs ?? performance.now())
 
-  // Campfire flames — drawn over scene so flames lick up above the pit.
-  renderCampfireFlames(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
-
   // Planting-in-progress sprout above any character currently planting.
   renderPlantingProgress(ctx, characters, offsetX, offsetY, zoom, plantingDurationMs ?? 2200)
 
@@ -2307,6 +2426,14 @@ export function renderFrame(
   // Pool foreground water — drawn AFTER characters so swimmers look submerged from the
   // waist down. Drawn before bubbles/effects so those still float above.
   renderPoolForeground(ctx, POOL_RECT, offsetX, offsetY, zoom, timeMs ?? performance.now())
+
+  // Dance dim — vignette around the bonfire while the ritual is dancing. Must come
+  // BEFORE the flame pass so the fire renders on top of the darkened scene.
+  renderDanceDim(ctx, canvasWidth, canvasHeight, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
+
+  // Campfire flames — drawn over scene (and on top of any dance-dim) so the bonfire
+  // dominates the frame during the ritual.
+  renderCampfireFlames(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)

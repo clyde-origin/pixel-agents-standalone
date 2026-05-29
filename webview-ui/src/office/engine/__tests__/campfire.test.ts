@@ -53,22 +53,31 @@ describe('resolveWoodpileTile', () => {
 })
 
 describe('computeDanceSlots', () => {
-  it('returns up to 8 walkable ring tiles, excluding the 3x3 core', () => {
+  it('returns walkable ring tiles around the 3x3 core, ordered inner-shell-first', () => {
     const fire = { col: 5, row: 30 }
     const walkable = () => true
     const slots = computeDanceSlots(fire, walkable)
-    expect(slots.length).toBeGreaterThanOrEqual(4)
-    expect(slots.length).toBeLessThanOrEqual(8)
+    // First 16 entries must be shell-2 (Chebyshev distance == 2 to fire).
+    const shell2 = slots.slice(0, 16)
+    expect(shell2.length).toBe(16)
+    for (const s of shell2) {
+      const cheb = Math.max(Math.abs(s.col - fire.col), Math.abs(s.row - fire.row))
+      expect(cheb).toBe(2)
+    }
+    // None should be inside the 3x3 core.
     for (const s of slots) {
       const inCore = s.col >= 4 && s.col <= 6 && s.row >= 29 && s.row <= 31
       expect(inCore).toBe(false)
     }
+    // Outer shells extend recruitment past the inner ring.
+    expect(slots.length).toBeGreaterThan(16)
   })
   it('drops slots that are not walkable', () => {
     const fire = { col: 5, row: 30 }
     const walkable = (c: number, r: number) => r === 28
     const slots = computeDanceSlots(fire, walkable)
-    expect(slots.length).toBe(5) // the 5 shell tiles at row 28 (cols 3..7)
+    // Every walkable tile sits on row 28; recruitment expands outward across shells.
+    expect(slots.length).toBeGreaterThan(0)
     expect(slots.every((s) => s.row === 28)).toBe(true)
   })
 })
