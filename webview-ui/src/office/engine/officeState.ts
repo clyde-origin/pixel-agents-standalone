@@ -393,6 +393,8 @@ export class OfficeState {
     this.campfire = createCampfireState()
     this.resolveCampfireGeometry()
     // Re-resolve the wizard line and reset the blessing queue (slot coords may have moved).
+    // Agents keep their needsBlessing flag, so any still awaiting a blessing harmlessly
+    // re-enqueue on the next tick.
     this.wizard = createWizardState()
     this.resolveWizardGeometry()
     this.ensureWizard()
@@ -1936,17 +1938,21 @@ export class OfficeState {
     this.wizard.queue.forEach((id, idx) => {
       const ch = this.characters.get(id)
       if (!ch) return
+      // Queue beyond MAX_LINE shares the last tile (benign visual stacking; line drains
+      // FIFO so no soft-lock).
       const slot = this.wizardLineTiles[Math.min(idx, this.wizardLineTiles.length - 1)]
       if (ch.tripMode !== 'wizard_blessing') {
         // Not started yet — the generic reconciliation will call startTrip; ensure the slot is free.
         return
       }
       if (ch.tripTile && (ch.tripTile.col !== slot.col || ch.tripTile.row !== slot.row)) {
-        this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
-        this.occupiedTripTiles.add(`${slot.col},${slot.row}`)
-        ch.tripTile = { col: slot.col, row: slot.row }
+        // Swap the trip-tile reservation only once a path is confirmed, so a failed
+        // findPath never leaves an unbacked reservation (matches startTrip).
         const path = findPath(ch.tileCol, ch.tileRow, slot.col, slot.row, this.tileMap, this.blockedTiles)
         if (path.length > 0) {
+          this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+          this.occupiedTripTiles.add(`${slot.col},${slot.row}`)
+          ch.tripTile = { col: slot.col, row: slot.row }
           ch.path = path
           ch.moveProgress = 0
           ch.state = CharacterState.WALK
@@ -1981,12 +1987,15 @@ export class OfficeState {
   /** Reveal the agent's desk PC if it is not already shown. The wand-bolt visual is
    *  rendered separately; this performs the actual materialize "if needed". */
   private summonDeskFor(ch: Character): void {
-    if (!ch.seatId) {
-      // No reserved seat yet — fall back to revealing the next pooled desk if we're out.
+    // Mid-blessing, startTrip has nulled ch.seatId and stashed the real seat in
+    // originalSeatId; resolve that first so we reveal the agent's own desk.
+    const seatId = ch.originalSeatId ?? ch.seatId
+    if (!seatId) {
+      // No reserved seat — fall back to revealing the next pooled desk if we're out.
       this.revealNextDesk()
       return
     }
-    const chairUid = ch.seatId.split(':')[0]
+    const chairUid = seatId.split(':')[0]
     const gid = this.deskGroupId(chairUid)
     if (gid && !this.revealedDeskIds.has(gid)) {
       this.revealedDeskIds.add(gid)
@@ -2347,6 +2356,8 @@ export class OfficeState {
     if (this.wizardLineTiles.length === 0) return null
     let idx = this.wizard.queue.indexOf(ch.id)
     if (idx < 0) idx = this.wizard.queue.length // about to be appended
+    // Queue beyond MAX_LINE shares the last tile (benign visual stacking; line drains
+    // FIFO so no soft-lock).
     const clamped = Math.min(idx, this.wizardLineTiles.length - 1)
     return this.wizardLineTiles[clamped]
   }
