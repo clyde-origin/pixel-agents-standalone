@@ -37,6 +37,10 @@ import {
   addWood, advanceCampfire, WOOD_TO_FULL, DROP_DURATION_MS,
   type CampfireState, type Tile,
 } from './campfire.js'
+import {
+  createWizardState, computeLineupTiles, MAX_LINE,
+  type WizardState, type Tile as WizardTile,
+} from './wizardDesk.js'
 
 export class OfficeState {
   layout: OfficeLayout
@@ -120,7 +124,9 @@ export class OfficeState {
     this.buildRevealQueue()
     this.rebuildVisibleState()
     this.ensureGreeter()
+    this.ensureWizard()
     this.resolveCampfireGeometry()
+    this.resolveWizardGeometry()
   }
 
   /** Sentinel ids for the two persistent greeter NPCs. Far below subagent IDs (which start at -1 and decrement). */
@@ -154,6 +160,20 @@ export class OfficeState {
   /** Green goddess stands two tiles to the left of the pad center (col 7), symmetric. */
   private static readonly GREETER2_COL = 7
   private static readonly GREETER2_ROW = 33
+
+  /** Sentinel id for the wizard NPC. (KNIGHT_ID is -1000002, so this is -1000003.) */
+  private static readonly WIZARD_ID = -1000003
+  /** Wizard desk fixture (2 tiles wide) at the lounge↔workstation boundary, central. */
+  private static readonly WIZARD_DESK_TILES: WizardTile[] = [
+    { col: 9, row: 24 },
+    { col: 10, row: 24 },
+  ]
+  /** Wizard stands behind the desk (north), facing south. */
+  private static readonly WIZARD_STAND_COL = 10
+  private static readonly WIZARD_STAND_ROW = 23
+  /** Front of the line (where the served agent is blessed) — one tile south of the desk. */
+  private static readonly WIZARD_FRONT_COL = 10
+  private static readonly WIZARD_FRONT_ROW = 25
 
   /** Spawn the persistent greeter NPCs (one on each side of the pad) if not yet placed. */
   private ensureGreeter(): void {
@@ -213,6 +233,24 @@ export class OfficeState {
         })
       }
     }
+  }
+
+  /** Spawn the persistent wizard NPC behind the blessing desk, if not yet placed. */
+  private ensureWizard(): void {
+    if (this.wizardInitialized) return
+    this.wizardInitialized = true
+    if (this.characters.has(OfficeState.WIZARD_ID)) return
+    const ch = createCharacter(OfficeState.WIZARD_ID, 5, null, null, 200)
+    ch.tileCol = OfficeState.WIZARD_STAND_COL
+    ch.tileRow = OfficeState.WIZARD_STAND_ROW
+    ch.x = OfficeState.WIZARD_STAND_COL * TILE_SIZE + TILE_SIZE / 2
+    ch.y = OfficeState.WIZARD_STAND_ROW * TILE_SIZE + TILE_SIZE / 2
+    ch.dir = Direction.DOWN // face the line
+    ch.state = CharacterState.IDLE
+    ch.isWizard = true
+    ch.isActive = false
+    ch.seatId = null
+    this.characters.set(OfficeState.WIZARD_ID, ch)
   }
 
   /** FIFO of agent IDs awaiting a knighting ceremony. setAgentActive(_, false) enqueues. */
@@ -306,6 +344,11 @@ export class OfficeState {
   /** Ordered clockwise dance-ring slots around the fire. */
   private danceSlots: Tile[] = []
 
+  // ── Wizard blessing ceremony ──
+  private wizard: WizardState = createWizardState()
+  private wizardLineTiles: WizardTile[] = []
+  private wizardInitialized = false
+
   /** Returns the fire tile position for the campfire render state (null if no campfire in layout). */
   getCampfireFireTile(): { col: number; row: number } | null { return this.fireTile }
 
@@ -336,7 +379,7 @@ export class OfficeState {
     // will reassign cleanly.
     this.occupiedTripTiles.clear()
     for (const ch of this.characters.values()) {
-      if (ch.isGreeter) continue
+      if (ch.isGreeter || ch.isWizard) continue
       ch.tripMode = null
       ch.tripTile = null
       ch.path = []
@@ -348,6 +391,10 @@ export class OfficeState {
     // Re-resolve campfire geometry and reset the ritual (slot coords may have moved).
     this.campfire = createCampfireState()
     this.resolveCampfireGeometry()
+    // Re-resolve the wizard line and reset the blessing queue (slot coords may have moved).
+    this.wizard = createWizardState()
+    this.resolveWizardGeometry()
+    this.ensureWizard()
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -369,7 +416,7 @@ export class OfficeState {
 
     // First pass: try to keep characters at their existing seats
     for (const ch of this.characters.values()) {
-      if (ch.isGreeter) continue // greeter never sits
+      if (ch.isGreeter || ch.isWizard) continue // greeter/wizard never sit
       if (ch.seatId && this.seats.has(ch.seatId)) {
         const seat = this.seats.get(ch.seatId)!
         if (!seat.assigned) {
@@ -390,7 +437,7 @@ export class OfficeState {
 
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
-      if (ch.isGreeter) continue
+      if (ch.isGreeter || ch.isWizard) continue
       if (ch.seatId) continue
       const seatId = this.findFreeSeat()
       if (seatId) {
@@ -407,7 +454,7 @@ export class OfficeState {
 
     // Relocate any characters that ended up outside bounds or on non-walkable tiles
     for (const ch of this.characters.values()) {
-      if (ch.isGreeter) continue // greeter has fixed position
+      if (ch.isGreeter || ch.isWizard) continue // greeter/wizard have fixed positions
       if (ch.seatId) continue // seated characters are fine
       if (ch.tileCol < 0 || ch.tileCol >= layout.cols || ch.tileRow < 0 || ch.tileRow >= layout.rows) {
         this.relocateCharacterToWalkable(ch)
@@ -448,6 +495,20 @@ export class OfficeState {
     }
     this.woodpileTile = resolveWoodpileTile(this.fireTile, walkable)
     this.danceSlots = computeDanceSlots(this.fireTile, walkable)
+  }
+
+  /** Resolve the wizard's single-file line tiles from the front-of-line anchor. */
+  private resolveWizardGeometry(): void {
+    const walkable = (c: number, r: number): boolean => {
+      if (this.blockedTiles.has(`${c},${r}`)) return false
+      const t = this.tileMap[r]?.[c]
+      return t !== undefined && t !== TileType.WALL && t !== TileType.VOID
+    }
+    this.wizardLineTiles = computeLineupTiles(
+      { col: OfficeState.WIZARD_FRONT_COL, row: OfficeState.WIZARD_FRONT_ROW },
+      walkable,
+      MAX_LINE,
+    )
   }
 
   getLayout(): OfficeLayout {
@@ -494,7 +555,7 @@ export class OfficeState {
     const counts = new Array(PALETTE_COUNT).fill(0) as number[]
     for (const ch of this.characters.values()) {
       if (ch.isSubagent) continue
-      if (ch.isGreeter) continue
+      if (ch.isGreeter || ch.isWizard) continue
       counts[ch.palette]++
     }
     const minCount = Math.min(...counts)
@@ -1053,6 +1114,9 @@ export class OfficeState {
   private rebuildVisibleState(): void {
     const visible = this.getVisibleFurniture()
     this.blockedTiles = getBlockedTiles(visible)
+    for (const t of OfficeState.WIZARD_DESK_TILES) {
+      this.blockedTiles.add(`${t.col},${t.row}`)
+    }
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles)
     this.rebuildFurnitureInstances()
   }
@@ -2123,7 +2187,7 @@ export class OfficeState {
   }
 
   /** Begin walking the agent toward a trip target. Returns true if a path was found. */
-  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance'): boolean {
+  private startTrip(ch: Character, type: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | 'wizard_blessing'): boolean {
     let target: { col: number; row: number } | null
     if (type === 'pacing') {
       target = this.pickPacingTile(ch.tileCol, ch.tileRow)
@@ -2238,7 +2302,7 @@ export class OfficeState {
   }
 
   /** Determine what trip (if any) the agent should currently be on. */
-  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | null {
+  private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | 'wizard_blessing' | null {
     if (!ch.isActive) {
       // Stay committed to in-flight planting until the timer runs out below.
       if (ch.tripMode === 'planting') return 'planting'
@@ -2583,6 +2647,13 @@ export class OfficeState {
       // pathfinding + walk machinery as agents but with its own driving logic.
       if (ch.isKnight) {
         this.tickKnight(ch, dt, nowMs)
+        continue
+      }
+
+      // Wizard NPC: just stands behind the desk. Pose/cast visuals are render-only.
+      if (ch.isWizard) {
+        ch.dir = Direction.DOWN
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles)
         continue
       }
 
