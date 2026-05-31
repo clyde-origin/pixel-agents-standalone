@@ -68,3 +68,65 @@ describe('computeLineupTiles', () => {
     expect(computeLineupTiles(front, () => true, 2)).toHaveLength(2)
   })
 })
+
+import {
+  advanceWizard,
+  BLESS_MS,
+  CAST_REMAINING_MS,
+  SAFETY_TIMEOUT_MS,
+} from '../wizardDesk.js'
+
+describe('advanceWizard', () => {
+  it('does nothing on an empty queue', () => {
+    const s = createWizardState()
+    expect(advanceWizard(s, 16, { nowMs: 1000, headArrived: false })).toEqual([])
+    expect(s.phase).toBe('idle')
+  })
+
+  it('starts blessing when the head arrives', () => {
+    const s = createWizardState()
+    enqueue(s, 5)
+    const ev = advanceWizard(s, 16, { nowMs: 1000, headArrived: true })
+    expect(ev).toContain('start_blessing')
+    expect(s.phase).toBe('blessing')
+    expect(s.blessTimer).toBe(BLESS_MS)
+  })
+
+  it('waits (no blessing) while the head has not arrived', () => {
+    const s = createWizardState()
+    enqueue(s, 5)
+    const ev = advanceWizard(s, 16, { nowMs: 1000, headArrived: false })
+    expect(ev).toEqual([])
+    expect(s.phase).toBe('idle')
+    expect(s.servingId).toBe(5)
+  })
+
+  it('fires cast_summon once, then release, popping the head', () => {
+    const s = createWizardState()
+    enqueue(s, 5); enqueue(s, 6)
+    advanceWizard(s, 16, { nowMs: 0, headArrived: true }) // start_blessing
+    // advance to just past the cast threshold
+    const toCast = BLESS_MS - CAST_REMAINING_MS + 1
+    const e1 = advanceWizard(s, toCast, { nowMs: toCast, headArrived: true })
+    expect(e1).toContain('cast_summon')
+    expect(s.casted).toBe(true)
+    // a second tick before completion does NOT re-cast
+    const e2 = advanceWizard(s, 10, { nowMs: toCast + 10, headArrived: true })
+    expect(e2).not.toContain('cast_summon')
+    // finish the blessing
+    const e3 = advanceWizard(s, CAST_REMAINING_MS, { nowMs: BLESS_MS + 100, headArrived: true })
+    expect(e3).toContain('release')
+    expect(s.queue).toEqual([6])
+    expect(s.servingId).toBeNull()
+    expect(s.phase).toBe('idle')
+  })
+
+  it('evicts a head that never arrives after the safety timeout', () => {
+    const s = createWizardState()
+    enqueue(s, 5)
+    advanceWizard(s, 16, { nowMs: 0, headArrived: false }) // servingSince = 0
+    const ev = advanceWizard(s, 16, { nowMs: SAFETY_TIMEOUT_MS + 1, headArrived: false })
+    expect(ev).toContain('evict')
+    expect(s.queue).toEqual([])
+  })
+})

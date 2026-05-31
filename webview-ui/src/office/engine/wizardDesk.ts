@@ -66,3 +66,66 @@ export function computeLineupTiles(
   }
   return tiles
 }
+
+export interface WizardContext {
+  nowMs: number
+  /** Is the head agent standing on the blessing spot (line index 0)? */
+  headArrived: boolean
+}
+
+export type WizardEvent = 'start_blessing' | 'cast_summon' | 'release' | 'evict'
+
+/** Advance the queue/blessing state machine. Mutates `state`; returns side-effect
+ *  events for OfficeState to act on (summon the desk, send the head to its seat). */
+export function advanceWizard(
+  state: WizardState,
+  dtMs: number,
+  ctx: WizardContext,
+): WizardEvent[] {
+  const events: WizardEvent[] = []
+
+  if (state.queue.length === 0) {
+    state.phase = 'idle'
+    state.servingId = null
+    state.casted = false
+    return events
+  }
+
+  const head = state.queue[0]
+  if (state.servingId !== head) {
+    state.servingId = head
+    state.servingSince = ctx.nowMs
+    state.phase = 'idle'
+    state.blessTimer = 0
+    state.casted = false
+  }
+
+  if (state.phase === 'idle') {
+    if (ctx.headArrived) {
+      state.phase = 'blessing'
+      state.blessTimer = BLESS_MS
+      state.casted = false
+      events.push('start_blessing')
+    } else if (ctx.nowMs - state.servingSince > SAFETY_TIMEOUT_MS) {
+      events.push('evict')
+      state.queue.shift()
+      state.servingId = null
+    }
+  } else {
+    // blessing
+    state.blessTimer -= dtMs
+    if (!state.casted && state.blessTimer <= CAST_REMAINING_MS) {
+      state.casted = true
+      events.push('cast_summon')
+    }
+    if (state.blessTimer <= 0) {
+      events.push('release')
+      state.queue.shift()
+      state.servingId = null
+      state.phase = 'idle'
+      state.casted = false
+    }
+  }
+
+  return events
+}
