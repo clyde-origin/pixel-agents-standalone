@@ -230,6 +230,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           phaseStartMs: officeState.campfire.phaseStartMs,
         }
 
+        const wizardRender = officeState.getWizardRenderState()
+
         const { offsetX, offsetY } = renderFrame(
           ctx,
           w,
@@ -254,6 +256,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
           2200,
           officeState.animals,
           campfireRender,
+          wizardRender,
         )
         offsetRef.current = { x: offsetX, y: offsetY }
 

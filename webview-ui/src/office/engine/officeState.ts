@@ -42,6 +42,7 @@ import {
   advanceWizard, enqueue, dequeue,
   type WizardState, type Tile as WizardTile,
 } from './wizardDesk.js'
+import type { WizardRenderState } from './renderer.js'
 
 export class OfficeState {
   layout: OfficeLayout
@@ -349,9 +350,26 @@ export class OfficeState {
   private wizard: WizardState = createWizardState()
   private wizardLineTiles: WizardTile[] = []
   private wizardInitialized = false
+  // Set on a cast_summon event; consumed by the renderer for the bolt animation.
+  private wizardSummonTo: { col: number; row: number } | null = null
+  private wizardSummonUntilMs = 0
+  private wizardBlessStartMs = 0
 
   /** Returns the fire tile position for the campfire render state (null if no campfire in layout). */
   getCampfireFireTile(): { col: number; row: number } | null { return this.fireTile }
+
+  /** Render state for the wizard scene (desk, blessing rune, summon bolt). */
+  getWizardRenderState(): WizardRenderState {
+    return {
+      deskTiles: OfficeState.WIZARD_DESK_TILES.map((t) => ({ col: t.col, row: t.row })),
+      standTile: { col: OfficeState.WIZARD_STAND_COL, row: OfficeState.WIZARD_STAND_ROW },
+      frontTile: { col: OfficeState.WIZARD_FRONT_COL, row: OfficeState.WIZARD_FRONT_ROW },
+      blessing: this.wizard.phase === 'blessing',
+      blessStartMs: this.wizardBlessStartMs,
+      summonTo: this.wizardSummonTo,
+      summonUntilMs: this.wizardSummonUntilMs,
+    }
+  }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
@@ -1972,9 +1990,19 @@ export class OfficeState {
 
     for (const ev of events) {
       if (ev === 'start_blessing') {
+        this.wizardBlessStartMs = nowMs
         if (headCh) headCh.dir = Direction.UP // face the wizard
       } else if (ev === 'cast_summon') {
-        if (headCh) this.summonDeskFor(headCh)
+        if (headCh) {
+          this.summonDeskFor(headCh)
+          // During the trip ch.seatId is null — the real seat is in originalSeatId.
+          const seatId = headCh.originalSeatId ?? headCh.seatId
+          const seat = seatId ? this.seats.get(seatId) : undefined
+          if (seat) {
+            this.wizardSummonTo = { col: seat.seatCol, row: seat.seatRow }
+            this.wizardSummonUntilMs = nowMs + 900
+          }
+        }
       } else if (ev === 'release' || ev === 'evict') {
         if (headCh) {
           headCh.needsBlessing = false

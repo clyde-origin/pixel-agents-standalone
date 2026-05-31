@@ -231,6 +231,7 @@ export function renderScene(
 
     // Capture danced flag + typing state for the overlay closure.
     const chDanced = ch.danced === true
+    const chIsWizard = ch.isWizard === true
     const chIsTyping = ch.state === CharacterState.TYPE && !ch.stretching
     const chDrawX = drawX
     const chDrawY = drawY
@@ -241,6 +242,10 @@ export function renderScene(
         c.drawImage(cached, chDrawX, chDrawY)
         if (chDanced) {
           drawLoinclothOverlay(c, chDrawX, chDrawY, zoom, chIsTyping)
+        }
+        if (chIsWizard) {
+          // Head anchor: top-center of the sprite cell, nudged down onto the head.
+          drawWizardOverlay(c, chDrawX + 8 * zoom, chDrawY + 8 * zoom, zoom)
         }
       },
     })
@@ -2301,6 +2306,22 @@ export interface CampfireRenderState {
   phaseStartMs: number
 }
 
+export interface WizardRenderState {
+  /** Desk fixture tiles (2 wide). */
+  deskTiles: Array<{ col: number; row: number }>
+  /** Wizard NPC standing tile. */
+  standTile: { col: number; row: number }
+  /** Blessing spot (front of line) — where the rune draws. */
+  frontTile: { col: number; row: number }
+  /** True while the wizard is actively blessing the head agent. */
+  blessing: boolean
+  /** performance.now() ms when the current blessing started (0 if idle). */
+  blessStartMs: number
+  /** When set, draw a summon bolt from the wizard to this seat tile until summonUntilMs. */
+  summonTo: { col: number; row: number } | null
+  summonUntilMs: number
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -2325,6 +2346,7 @@ export function renderFrame(
   plantingDurationMs?: number,
   animals?: ForestAnimal[],
   campfire?: CampfireRenderState,
+  wizard?: WizardRenderState,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight)
@@ -2356,6 +2378,12 @@ export function renderFrame(
 
   // Swimming pool — drawn over floor, under furniture/characters so swimmers stand "in" it.
   renderPool(ctx, POOL_RECT, offsetX, offsetY, zoom, timeMs ?? performance.now())
+
+  // Wizard scene — desk fixture, the pulsing blessing rune under the served agent, and the
+  // summon bolt. Drawn under characters so the agent stands on/over the rune.
+  if (wizard) {
+    renderWizardScene(ctx, wizard, offsetX, offsetY, zoom, timeMs ?? performance.now())
+  }
 
   // Desk-reveal/hide portal rings — drawn on the floor under furniture.
   if (portalRings && portalRings.length > 0) {
@@ -2469,4 +2497,96 @@ export function renderFrame(
   }
 
   return { offsetX, offsetY }
+}
+
+function renderWizardScene(
+  ctx: CanvasRenderingContext2D,
+  w: WizardRenderState,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  timeMs: number,
+): void {
+  const px = (col: number) => offsetX + col * TILE_SIZE * zoom
+  const py = (row: number) => offsetY + row * TILE_SIZE * zoom
+  const ts = TILE_SIZE * zoom
+
+  // Desk fixture — a dark wood counter across the 2 desk tiles.
+  for (const t of w.deskTiles) {
+    ctx.fillStyle = '#4a3526'
+    ctx.fillRect(px(t.col), py(t.row) + ts * 0.35, ts, ts * 0.5)
+    ctx.fillStyle = '#5e4632'
+    ctx.fillRect(px(t.col), py(t.row) + ts * 0.3, ts, ts * 0.12)
+  }
+
+  // Blessing rune — a pulsing magic circle under the agent at the front tile.
+  if (w.blessing) {
+    const t = (timeMs - w.blessStartMs) / 1000
+    const cx = px(w.frontTile.col) + ts / 2
+    const cy = py(w.frontTile.row) + ts / 2
+    const r = ts * (0.38 + 0.06 * Math.sin(t * 6))
+    ctx.save()
+    ctx.globalAlpha = 0.55 + 0.25 * Math.sin(t * 6)
+    ctx.strokeStyle = '#9b7bff'
+    ctx.lineWidth = 2 * zoom
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke()
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.6, 0, Math.PI * 2); ctx.stroke()
+    // a few orbiting sparkle dots
+    for (let i = 0; i < 6; i++) {
+      const a = t * 3 + (i * Math.PI) / 3
+      ctx.fillStyle = '#d8c8ff'
+      ctx.fillRect(cx + Math.cos(a) * r - zoom, cy + Math.sin(a) * r - zoom, 2 * zoom, 2 * zoom)
+    }
+    ctx.restore()
+  }
+
+  // Summon bolt — an arc of light from the wizard to the agent's seat while active.
+  if (w.summonTo && timeMs < w.summonUntilMs) {
+    const sx = px(w.standTile.col) + ts / 2
+    const sy = py(w.standTile.row) + ts / 2
+    const ex = px(w.summonTo.col) + ts / 2
+    const ey = py(w.summonTo.row) + ts / 2
+    ctx.save()
+    ctx.globalAlpha = 0.8
+    ctx.strokeStyle = '#bda6ff'
+    ctx.lineWidth = 2.5 * zoom
+    ctx.beginPath()
+    ctx.moveTo(sx, sy)
+    ctx.quadraticCurveTo((sx + ex) / 2, Math.min(sy, ey) - ts, ex, ey)
+    ctx.stroke()
+    // sparkle landing at the seat
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(ex - 2 * zoom, ey - 2 * zoom, 4 * zoom, 4 * zoom)
+    ctx.restore()
+  }
+}
+
+/** Pointy hat + staff drawn over the base sprite for the wizard NPC.
+ *  `headX`/`headY` are the head anchor in screen space (sprite top-center area). */
+function drawWizardOverlay(
+  ctx: CanvasRenderingContext2D,
+  headX: number,
+  headY: number,
+  zoom: number,
+): void {
+  const u = zoom // 1px in screen space
+  // Pointy purple hat sitting on the head.
+  ctx.fillStyle = '#3b2a6b'
+  ctx.beginPath()
+  ctx.moveTo(headX, headY - 16 * u)
+  ctx.lineTo(headX - 6 * u, headY - 4 * u)
+  ctx.lineTo(headX + 6 * u, headY - 4 * u)
+  ctx.closePath()
+  ctx.fill()
+  // Hat brim + a star.
+  ctx.fillRect(headX - 7 * u, headY - 5 * u, 14 * u, 2 * u)
+  ctx.fillStyle = '#ffe27a'
+  ctx.fillRect(headX - u, headY - 11 * u, 2 * u, 2 * u)
+  // Staff with a glowing tip, held to the right.
+  ctx.fillStyle = '#6b4a2a'
+  ctx.fillRect(headX + 7 * u, headY - 10 * u, 1.5 * u, 16 * u)
+  ctx.fillStyle = '#bda6ff'
+  ctx.beginPath()
+  ctx.arc(headX + 7.5 * u, headY - 11 * u, 2.5 * u, 0, Math.PI * 2)
+  ctx.fill()
 }
