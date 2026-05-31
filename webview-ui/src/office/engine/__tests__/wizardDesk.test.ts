@@ -41,3 +41,30 @@ describe('dequeue', () => {
     expect(s.servingId).toBeNull()
   })
 })
+
+import { computeLineupTiles } from '../wizardDesk.js'
+
+describe('computeLineupTiles', () => {
+  const front = { col: 10, row: 25 }
+  it('walks south from the blessing spot, all walkable', () => {
+    const tiles = computeLineupTiles(front, () => true, 4)
+    expect(tiles).toEqual([
+      { col: 10, row: 25 },
+      { col: 10, row: 26 },
+      { col: 10, row: 27 },
+      { col: 10, row: 28 },
+    ])
+  })
+  it('skips blocked tiles but stays in the same column', () => {
+    const blocked = new Set(['10,26'])
+    const tiles = computeLineupTiles(front, (c, r) => !blocked.has(`${c},${r}`), 3)
+    expect(tiles).toEqual([
+      { col: 10, row: 25 },
+      { col: 10, row: 27 },
+      { col: 10, row: 28 },
+    ])
+  })
+  it('caps at maxLen', () => {
+    expect(computeLineupTiles(front, () => true, 2)).toHaveLength(2)
+  })
+})

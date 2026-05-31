@@ -49,3 +49,20 @@ export function dequeue(state: WizardState, id: number): void {
     state.casted = false
   }
 }
+
+/** Ordered single-file line walking SOUTH from the blessing spot (index 0).
+ *  Non-walkable rows are skipped so the line stays in one column. */
+export function computeLineupTiles(
+  frontTile: Tile,
+  isWalkable: (col: number, row: number) => boolean,
+  maxLen: number = MAX_LINE,
+): Tile[] {
+  const tiles: Tile[] = []
+  let row = frontTile.row
+  const limit = frontTile.row + maxLen + 12 // scan a bit past in case of gaps
+  while (tiles.length < maxLen && row < limit) {
+    if (isWalkable(frontTile.col, row)) tiles.push({ col: frontTile.col, row })
+    row++
+  }
+  return tiles
+}
