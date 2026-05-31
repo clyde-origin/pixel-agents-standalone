@@ -242,7 +242,7 @@ export interface Character {
    *  - 'pacing'    — walking back and forth in the library area while thinking
    *  - 'ping_pong' — standing at one end of the lounge ping-pong table
    *  - 'chess'     — standing at one end of the lounge chess set */
-  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | null
+  tripMode: 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | 'wizard_blessing' | null
   /** Tile the agent is occupying (or walking toward) for the current trip. */
   tripTile: { col: number; row: number } | null
   /** Home seat to return to when the trip ends. Saved when the trip begins. */
@@ -258,6 +258,10 @@ export interface Character {
   spinTimer: number | null
   /** True for the persistent greeter NPC at the pad — excluded from agent counts and most update logic. */
   isGreeter?: boolean
+  /** True for the persistent wizard NPC behind the blessing desk. */
+  isWizard?: boolean
+  /** Set when an agent must visit the wizard before working (first appearance + every reactivation). */
+  needsBlessing?: boolean
   /** Which greeter sprite palette ('gold' = right white-robe goddess, 'green' = left green-robe goddess). */
   greeterVariant?: 'gold' | 'green'
   /** SPAWNING agents: which hug stage. 0 = not started; 1 = hugging right (gold); 2 = hugging left (green); 3 = done. */
