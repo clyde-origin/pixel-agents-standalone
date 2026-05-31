@@ -42,7 +42,8 @@ export function enqueue(state: WizardState, id: number): void {
 
 /** Remove an agent from anywhere in the line. */
 export function dequeue(state: WizardState, id: number): void {
-  state.queue = state.queue.filter((q) => q !== id)
+  const i = state.queue.indexOf(id)
+  if (i !== -1) state.queue.splice(i, 1)
   if (state.servingId === id) {
     state.servingId = null
     state.phase = 'idle'
@@ -59,7 +60,8 @@ export function computeLineupTiles(
 ): Tile[] {
   const tiles: Tile[] = []
   let row = frontTile.row
-  const limit = frontTile.row + maxLen + 12 // scan a bit past in case of gaps
+  // Tolerate up to MAX_LINE blocked rows before giving up the scan.
+  const limit = frontTile.row + maxLen + MAX_LINE
   while (tiles.length < maxLen && row < limit) {
     if (isWalkable(frontTile.col, row)) tiles.push({ col: frontTile.col, row })
     row++

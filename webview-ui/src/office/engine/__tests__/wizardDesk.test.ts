@@ -3,6 +3,11 @@ import {
   createWizardState,
   enqueue,
   dequeue,
+  computeLineupTiles,
+  advanceWizard,
+  BLESS_MS,
+  CAST_REMAINING_MS,
+  SAFETY_TIMEOUT_MS,
 } from '../wizardDesk.js'
 
 describe('createWizardState', () => {
@@ -42,8 +47,6 @@ describe('dequeue', () => {
   })
 })
 
-import { computeLineupTiles } from '../wizardDesk.js'
-
 describe('computeLineupTiles', () => {
   const front = { col: 10, row: 25 }
   it('walks south from the blessing spot, all walkable', () => {
@@ -67,14 +70,10 @@ describe('computeLineupTiles', () => {
   it('caps at maxLen', () => {
     expect(computeLineupTiles(front, () => true, 2)).toHaveLength(2)
   })
+  it('computeLineupTiles returns empty for maxLen 0', () => {
+    expect(computeLineupTiles({ col: 10, row: 25 }, () => true, 0)).toEqual([])
+  })
 })
-
-import {
-  advanceWizard,
-  BLESS_MS,
-  CAST_REMAINING_MS,
-  SAFETY_TIMEOUT_MS,
-} from '../wizardDesk.js'
 
 describe('advanceWizard', () => {
   it('does nothing on an empty queue', () => {
@@ -128,5 +127,26 @@ describe('advanceWizard', () => {
     const ev = advanceWizard(s, 16, { nowMs: SAFETY_TIMEOUT_MS + 1, headArrived: false })
     expect(ev).toContain('evict')
     expect(s.queue).toEqual([])
+  })
+
+  it('removing a waiting (non-head) agent does not disturb an in-progress blessing', () => {
+    const s = createWizardState()
+    enqueue(s, 1); enqueue(s, 2)
+    advanceWizard(s, 16, { nowMs: 0, headArrived: true }) // blessing id 1
+    dequeue(s, 2)
+    expect(s.queue).toEqual([1])
+    expect(s.phase).toBe('blessing')
+    expect(s.servingId).toBe(1)
+  })
+
+  it('promotes the next head after an eviction', () => {
+    const s = createWizardState()
+    enqueue(s, 1); enqueue(s, 2)
+    advanceWizard(s, 16, { nowMs: 0, headArrived: false }) // serving 1, servingSince 0
+    advanceWizard(s, 16, { nowMs: SAFETY_TIMEOUT_MS + 1, headArrived: false }) // evict 1
+    expect(s.queue).toEqual([2])
+    const ev = advanceWizard(s, 16, { nowMs: SAFETY_TIMEOUT_MS + 2, headArrived: true })
+    expect(s.servingId).toBe(2)
+    expect(ev).toContain('start_blessing')
   })
 })
