@@ -39,6 +39,7 @@ import {
 } from './campfire.js'
 import {
   createWizardState, computeLineupTiles, MAX_LINE,
+  advanceWizard, enqueue, dequeue,
   type WizardState, type Tile as WizardTile,
 } from './wizardDesk.js'
 
@@ -756,6 +757,7 @@ export class OfficeState {
     if (ch.matrixEffect === 'despawn') return // already despawning
     // Release campfire-specific bookkeeping (woodReserved, dancers) before tearing down.
     this.cancelCampfireTrip(ch)
+    this.cancelWizardTrip(ch)
     // Release any field-trip tile they were holding
     if (ch.tripTile) {
       this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
@@ -957,6 +959,7 @@ export class OfficeState {
       }
       // Release campfire-specific bookkeeping before despawn.
       this.cancelCampfireTrip(ch)
+      this.cancelWizardTrip(ch)
       if (ch.seatId) {
         const seat = this.seats.get(ch.seatId)
         if (seat) seat.assigned = false
@@ -990,6 +993,7 @@ export class OfficeState {
           }
           // Release campfire-specific bookkeeping before despawn.
           this.cancelCampfireTrip(ch)
+          this.cancelWizardTrip(ch)
           if (ch.seatId) {
             const seat = this.seats.get(ch.seatId)
             if (seat) seat.assigned = false
@@ -1029,6 +1033,16 @@ export class OfficeState {
       this.campfire = { ...this.campfire, dancers: this.campfire.dancers.filter((d) => d !== ch.id) }
     }
     if ((ch.tripMode === 'campfire_wood' || ch.tripMode === 'campfire_dance') && ch.tripTile) {
+      this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+    }
+  }
+
+  /** Remove an agent from the wizard line and free its reserved slot. Call wherever a
+   *  character is torn down or pulled out of the ceremony. */
+  private cancelWizardTrip(ch: Character): void {
+    dequeue(this.wizard, ch.id)
+    ch.needsBlessing = false
+    if (ch.tripMode === 'wizard_blessing' && ch.tripTile) {
       this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
     }
   }
@@ -1905,6 +1919,83 @@ export class OfficeState {
     }
   }
 
+  private tickWizard(dt: number, nowMs: number): void {
+    if (this.wizardLineTiles.length === 0) return
+
+    // 1. Enqueue any agent flagged for blessing that is not already in line, and not still
+    //    materializing/spinning (let the spawn ceremony finish first).
+    for (const ch of this.characters.values()) {
+      if (!ch.needsBlessing) continue
+      if (ch.isWizard || ch.isGreeter || ch.isKnight) continue
+      if (ch.matrixEffect || ch.state === CharacterState.SPAWNING) continue
+      enqueue(this.wizard, ch.id)
+    }
+
+    // 2. Reflow: each queued agent should be walking to / standing on its line slot.
+    //    Re-path only when its target slot changed (covers line-advance + mid-line removal).
+    this.wizard.queue.forEach((id, idx) => {
+      const ch = this.characters.get(id)
+      if (!ch) return
+      const slot = this.wizardLineTiles[Math.min(idx, this.wizardLineTiles.length - 1)]
+      if (ch.tripMode !== 'wizard_blessing') {
+        // Not started yet — the generic reconciliation will call startTrip; ensure the slot is free.
+        return
+      }
+      if (ch.tripTile && (ch.tripTile.col !== slot.col || ch.tripTile.row !== slot.row)) {
+        this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+        this.occupiedTripTiles.add(`${slot.col},${slot.row}`)
+        ch.tripTile = { col: slot.col, row: slot.row }
+        const path = findPath(ch.tileCol, ch.tileRow, slot.col, slot.row, this.tileMap, this.blockedTiles)
+        if (path.length > 0) {
+          ch.path = path
+          ch.moveProgress = 0
+          ch.state = CharacterState.WALK
+          ch.frame = 0
+          ch.frameTimer = 0
+        }
+      }
+    })
+
+    // 3. Advance the state machine. headArrived = the front agent is on the blessing spot.
+    const front = this.wizardLineTiles[0]
+    const head = this.wizard.queue[0]
+    const headCh = head !== undefined ? this.characters.get(head) : undefined
+    const headArrived =
+      !!headCh && !!front && headCh.tileCol === front.col && headCh.tileRow === front.row
+    const events = advanceWizard(this.wizard, dt * 1000, { nowMs, headArrived })
+
+    for (const ev of events) {
+      if (ev === 'start_blessing') {
+        if (headCh) headCh.dir = Direction.UP // face the wizard
+      } else if (ev === 'cast_summon') {
+        if (headCh) this.summonDeskFor(headCh)
+      } else if (ev === 'release' || ev === 'evict') {
+        if (headCh) {
+          headCh.needsBlessing = false
+          this.endTrip(headCh) // frees the slot + walks them to their seat
+        }
+      }
+    }
+  }
+
+  /** Reveal the agent's desk PC if it is not already shown. The wand-bolt visual is
+   *  rendered separately; this performs the actual materialize "if needed". */
+  private summonDeskFor(ch: Character): void {
+    if (!ch.seatId) {
+      // No reserved seat yet — fall back to revealing the next pooled desk if we're out.
+      this.revealNextDesk()
+      return
+    }
+    const chairUid = ch.seatId.split(':')[0]
+    const gid = this.deskGroupId(chairUid)
+    if (gid && !this.revealedDeskIds.has(gid)) {
+      this.revealedDeskIds.add(gid)
+      this.deskLastEmptyAt.delete(gid)
+      this.deskAnimations.set(gid, { type: 'reveal', startMs: performance.now() })
+      this.rebuildVisibleState()
+    }
+  }
+
   /** Pull idle agents onto free dance slots, up to the ring capacity. */
   private recruitDancers(): void {
     const live = this.campfire.dancers.filter((id) => {
@@ -2595,6 +2686,7 @@ export class OfficeState {
     this.updatePingPongMatch(nowMs)
     this.tickAnimals(dt, nowMs)
     this.tickCampfire(dt, nowMs)
+    this.tickWizard(dt, nowMs)
 
     const toDelete: number[] = []
     for (const ch of this.characters.values()) {
