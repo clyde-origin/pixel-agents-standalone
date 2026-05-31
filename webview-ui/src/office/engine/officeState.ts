@@ -697,6 +697,7 @@ export class OfficeState {
       ch.y = OfficeState.PAD_ROW * TILE_SIZE + TILE_SIZE / 2
       ch.path = []
       ch.moveProgress = 0
+      ch.needsBlessing = true
       // Hold in SPAWNING until matrix completes; then spin handler will run.
       ch.state = CharacterState.SPAWNING
     }
@@ -929,6 +930,7 @@ export class OfficeState {
     }
     ch.isSubagent = true
     ch.parentAgentId = parentAgentId
+    ch.needsBlessing = true // subagents queue for the blessing too
     ch.matrixEffect = 'spawn'
     ch.matrixEffectTimer = 0
     ch.matrixEffectSeeds = matrixEffectSeeds()
@@ -1057,6 +1059,10 @@ export class OfficeState {
         // Re-activated mid-ritual — release campfire bookkeeping (the trip tile itself is
         // freed by endTrip on the next update tick once desiredTripFor returns null).
         this.cancelCampfireTrip(ch)
+        // Re-blessing: every reactivation re-runs the ceremony before working.
+        if (!ch.isGreeter && !ch.isWizard && !ch.isKnight) {
+          ch.needsBlessing = true
+        }
       }
       this.rebuildFurnitureInstances()
     }
@@ -2206,6 +2212,8 @@ export class OfficeState {
       target = this.woodpileTile
     } else if (type === 'campfire_dance') {
       target = this.findFreeDanceSlot(ch)
+    } else if (type === 'wizard_blessing') {
+      target = this.wizardSlotFor(ch)
     } else {
       target = this.pickFreeTripTile(type, ch.tileCol, ch.tileRow)
     }
@@ -2240,6 +2248,16 @@ export class OfficeState {
     ch.frame = 0
     ch.frameTimer = 0
     return true
+  }
+
+  /** The line tile this agent should occupy, based on its index in the wizard queue.
+   *  Falls back to the back of the line if it is not yet enqueued. */
+  private wizardSlotFor(ch: Character): WizardTile | null {
+    if (this.wizardLineTiles.length === 0) return null
+    let idx = this.wizard.queue.indexOf(ch.id)
+    if (idx < 0) idx = this.wizard.queue.length // about to be appended
+    const clamped = Math.min(idx, this.wizardLineTiles.length - 1)
+    return this.wizardLineTiles[clamped]
   }
 
   /** Pick a random walkable tile in one of the horizontal aisles, biased away from
@@ -2303,6 +2321,8 @@ export class OfficeState {
 
   /** Determine what trip (if any) the agent should currently be on. */
   private desiredTripFor(ch: Character, _now: number): 'beanbag' | 'bookshelf' | 'pacing' | 'ping_pong' | 'chess' | 'pool' | 'planting' | 'campfire_wood' | 'campfire_dance' | 'wizard_blessing' | null {
+    // The blessing gates everything else, for active and idle agents alike.
+    if (ch.needsBlessing) return 'wizard_blessing'
     if (!ch.isActive) {
       // Stay committed to in-flight planting until the timer runs out below.
       if (ch.tripMode === 'planting') return 'planting'
