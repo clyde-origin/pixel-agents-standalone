@@ -262,6 +262,10 @@ export interface Character {
   isWizard?: boolean
   /** Set when an agent must visit the wizard before working (first appearance + every reactivation). */
   needsBlessing?: boolean
+  /** When set, the agent is walking to a tile beside a blocked seat and should snap onto
+   *  the seat on arrival. Used to return blessed agents to chair seats, which are not
+   *  walkable once their desk is revealed (and hero chairs are always blocked). */
+  seatSnapTarget?: { col: number; row: number; dir: Direction }
   /** Which greeter sprite palette ('gold' = right white-robe goddess, 'green' = left green-robe goddess). */
   greeterVariant?: 'gold' | 'green'
   /** SPAWNING agents: which hug stage. 0 = not started; 1 = hugging right (gold); 2 = hugging left (green); 3 = done. */

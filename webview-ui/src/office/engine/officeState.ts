@@ -1958,25 +1958,31 @@ export class OfficeState {
       if (!ch) return
       // Queue beyond MAX_LINE shares the last tile (benign visual stacking; line drains
       // FIFO so no soft-lock).
-      const slot = this.wizardLineTiles[Math.min(idx, this.wizardLineTiles.length - 1)]
       if (ch.tripMode !== 'wizard_blessing') {
         // Not started yet — the generic reconciliation will call startTrip; ensure the slot is free.
         return
       }
-      if (ch.tripTile && (ch.tripTile.col !== slot.col || ch.tripTile.row !== slot.row)) {
-        // Swap the trip-tile reservation only once a path is confirmed, so a failed
-        // findPath never leaves an unbacked reservation (matches startTrip).
-        const path = findPath(ch.tileCol, ch.tileRow, slot.col, slot.row, this.tileMap, this.blockedTiles)
-        if (path.length > 0) {
+      const slot = this.wizardLineTiles[Math.min(idx, this.wizardLineTiles.length - 1)]
+      const atSlot = ch.tileCol === slot.col && ch.tileRow === slot.row
+      if (atSlot) return
+      const slotChanged = !ch.tripTile || ch.tripTile.col !== slot.col || ch.tripTile.row !== slot.row
+      // Re-path when the target slot changed (line advanced / mid-line removal) OR the agent
+      // lost its path — setAgentActive(false) wipes ch.path, which would otherwise freeze an
+      // agent mid-walk to the wizard until the safety-timeout evicts it.
+      if (!slotChanged && ch.path.length > 0) return
+      const path = findPath(ch.tileCol, ch.tileRow, slot.col, slot.row, this.tileMap, this.blockedTiles)
+      if (path.length > 0) {
+        // Swap the trip-tile reservation only once a path is confirmed (matches startTrip).
+        if (ch.tripTile && (ch.tripTile.col !== slot.col || ch.tripTile.row !== slot.row)) {
           this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
-          this.occupiedTripTiles.add(`${slot.col},${slot.row}`)
-          ch.tripTile = { col: slot.col, row: slot.row }
-          ch.path = path
-          ch.moveProgress = 0
-          ch.state = CharacterState.WALK
-          ch.frame = 0
-          ch.frameTimer = 0
         }
+        this.occupiedTripTiles.add(`${slot.col},${slot.row}`)
+        ch.tripTile = { col: slot.col, row: slot.row }
+        ch.path = path
+        ch.moveProgress = 0
+        ch.state = CharacterState.WALK
+        ch.frame = 0
+        ch.frameTimer = 0
       }
     })
 
@@ -2006,7 +2012,7 @@ export class OfficeState {
       } else if (ev === 'release' || ev === 'evict') {
         if (headCh) {
           headCh.needsBlessing = false
-          this.endTrip(headCh) // frees the slot + walks them to their seat
+          this.sendHomeFromWizard(headCh) // frees the slot + routes them home (handles blocked chairs)
         }
       }
     }
@@ -2031,6 +2037,72 @@ export class OfficeState {
       this.deskAnimations.set(gid, { type: 'reveal', startMs: performance.now() })
       this.rebuildVisibleState()
     }
+  }
+
+  /** Send a just-blessed agent back to its workstation. Unlike endTrip, this handles
+   *  seats whose chair tile is unwalkable (the desk was revealed during the blessing, or
+   *  hero chairs which are always blocked): walk to a walkable neighbour, then snap onto
+   *  the seat on arrival (see seatSnapTarget handling in update()). */
+  private sendHomeFromWizard(ch: Character): void {
+    if (ch.tripTile) {
+      this.occupiedTripTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+      ch.tripTile = null
+    }
+    ch.tripMode = null
+    ch.seatSnapTarget = undefined
+    const seatId = ch.originalSeatId ?? ch.seatId
+    ch.originalSeatId = null
+    if (!seatId) return
+    ch.seatId = seatId
+    const seat = this.seats.get(seatId)
+    if (!seat) return
+    if (ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
+      ch.state = CharacterState.TYPE
+      ch.dir = seat.facingDir
+      return
+    }
+    // Direct path works only while the chair is still walkable (e.g. unrevealed desk).
+    let path = findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles)
+    if (path.length === 0) {
+      // Chair is blocked — walk to a walkable neighbour, then snap onto the seat.
+      const nb = this.walkableNeighbour(seat.seatCol, seat.seatRow)
+      if (nb) {
+        path = findPath(ch.tileCol, ch.tileRow, nb.col, nb.row, this.tileMap, this.blockedTiles)
+        if (path.length > 0) {
+          ch.seatSnapTarget = { col: seat.seatCol, row: seat.seatRow, dir: seat.facingDir }
+        }
+      }
+    }
+    if (path.length > 0) {
+      ch.path = path
+      ch.moveProgress = 0
+      ch.state = CharacterState.WALK
+      ch.frame = 0
+      ch.frameTimer = 0
+    } else {
+      // Last resort — snap home so the agent never wedges at the wizard.
+      ch.tileCol = seat.seatCol
+      ch.tileRow = seat.seatRow
+      ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2
+      ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2
+      ch.dir = seat.facingDir
+      ch.state = CharacterState.TYPE
+    }
+  }
+
+  /** First 4-neighbour of a tile that is walkable (prefers below, where chairs are
+   *  usually approached from). Returns null if fully enclosed. */
+  private walkableNeighbour(col: number, row: number): { col: number; row: number } | null {
+    const offsets: Array<[number, number]> = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+    for (const [dc, dr] of offsets) {
+      const c = col + dc
+      const r = row + dr
+      if (this.blockedTiles.has(`${c},${r}`)) continue
+      const t = this.tileMap[r]?.[c]
+      if (t === undefined || t === TileType.WALL || t === TileType.VOID) continue
+      return { col: c, row: r }
+    }
+    return null
   }
 
   /** Pull idle agents onto free dance slots, up to the ring capacity. */
@@ -2751,6 +2823,20 @@ export class OfficeState {
           }
         }
         continue // skip normal FSM while effect is active
+      }
+
+      // A just-blessed agent that walked to the tile beside its (blocked) chair snaps
+      // onto the seat. Guarded by !needsBlessing so a re-blessing agent heading back to
+      // the wizard never snaps mid-trip.
+      if (ch.seatSnapTarget && !ch.needsBlessing && ch.path.length === 0 && ch.state !== CharacterState.WALK) {
+        const s = ch.seatSnapTarget
+        ch.tileCol = s.col
+        ch.tileRow = s.row
+        ch.x = s.col * TILE_SIZE + TILE_SIZE / 2
+        ch.y = s.row * TILE_SIZE + TILE_SIZE / 2
+        ch.dir = s.dir
+        ch.state = ch.isActive ? CharacterState.TYPE : CharacterState.IDLE
+        ch.seatSnapTarget = undefined
       }
 
       // Greeter NPCs (gold right, green left): skip all wandering/trip/seat logic.

@@ -130,6 +130,13 @@ export function updateCharacter(
     return
   }
 
+  // Wizard NPC: static behind the desk, always facing the line. Never wanders/sits/walks.
+  if (ch.isWizard) {
+    ch.dir = Direction.DOWN
+    ch.frame = 0
+    return
+  }
+
   // Decay intensity globally — applies in all states so it leaks back to 0.
   if (ch.intensity > 0) {
     ch.intensity = Math.max(0, ch.intensity - INTENSITY_DECAY_PER_SEC * dt)

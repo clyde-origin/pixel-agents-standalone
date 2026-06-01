@@ -2540,23 +2540,88 @@ function renderWizardScene(
     ctx.restore()
   }
 
-  // Summon bolt — an arc of light from the wizard to the agent's seat while active.
+  // Summon beam — fired from the wizard's glowing staff tip to the agent's seat.
   if (w.summonTo && timeMs < w.summonUntilMs) {
-    const sx = px(w.standTile.col) + ts / 2
-    const sy = py(w.standTile.row) + ts / 2
+    const SUMMON_VIS_MS = 900 // must match OfficeState's wizardSummonUntilMs window
+    // Staff-tip origin: mirrors the purple glow drawn in drawWizardOverlay
+    // (head anchor = tile-centre; tip = +7.5px x, headY-11px → +15.5, -19 from tile origin).
+    const STAFF_TIP_DX = 15.5
+    const STAFF_TIP_DY = -19
+    const p = Math.max(0, Math.min(1, (SUMMON_VIS_MS - (w.summonUntilMs - timeMs)) / SUMMON_VIS_MS))
+
+    const sx = px(w.standTile.col) + STAFF_TIP_DX * zoom
+    const sy = py(w.standTile.row) + STAFF_TIP_DY * zoom
     const ex = px(w.summonTo.col) + ts / 2
     const ey = py(w.summonTo.row) + ts / 2
+    const cxq = (sx + ex) / 2
+    const cyq = Math.min(sy, ey) - ts * 1.2 // bow the arc upward
+    const bez = (t: number) => ({
+      x: (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cxq + t * t * ex,
+      y: (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cyq + t * t * ey,
+    })
+
     ctx.save()
-    ctx.globalAlpha = 0.8
-    ctx.strokeStyle = '#bda6ff'
-    ctx.lineWidth = 2.5 * zoom
+    ctx.lineCap = 'round'
+    const beamAlpha = Math.sin(Math.min(1, p / 0.85) * Math.PI) // grow in, fade out
+
+    // Three stacked strokes: soft outer glow → mid → bright core.
+    const stroke = (color: string, width: number, alpha: number) => {
+      ctx.globalAlpha = alpha * beamAlpha
+      ctx.strokeStyle = color
+      ctx.lineWidth = width * zoom
+      ctx.beginPath()
+      ctx.moveTo(sx, sy)
+      ctx.quadraticCurveTo(cxq, cyq, ex, ey)
+      ctx.stroke()
+    }
+    stroke('#7b5cff', 7, 0.3)
+    stroke('#bda6ff', 3.5, 0.65)
+    stroke('#ffffff', 1.3, 1)
+
+    // Muzzle flash at the staff tip — bright burst that blooms then fades.
+    const flash = Math.max(0, 1 - p / 0.4)
+    if (flash > 0) {
+      const fr = (3 + 6 * (1 - flash)) * zoom
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, fr)
+      g.addColorStop(0, 'rgba(255,255,255,1)')
+      g.addColorStop(0.45, 'rgba(189,166,255,0.9)')
+      g.addColorStop(1, 'rgba(123,92,255,0)')
+      ctx.globalAlpha = flash
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(sx, sy, fr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Travelling spark riding the beam from tip → seat (arrives by ~60%).
+    const tt = Math.min(1, p / 0.6)
+    const spk = bez(tt)
+    const sg = ctx.createRadialGradient(spk.x, spk.y, 0, spk.x, spk.y, 4.5 * zoom)
+    sg.addColorStop(0, 'rgba(255,255,255,1)')
+    sg.addColorStop(1, 'rgba(189,166,255,0)')
+    ctx.globalAlpha = beamAlpha
+    ctx.fillStyle = sg
     ctx.beginPath()
-    ctx.moveTo(sx, sy)
-    ctx.quadraticCurveTo((sx + ex) / 2, Math.min(sy, ey) - ts, ex, ey)
-    ctx.stroke()
-    // sparkle landing at the seat
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(ex - 2 * zoom, ey - 2 * zoom, 4 * zoom, 4 * zoom)
+    ctx.arc(spk.x, spk.y, 4.5 * zoom, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Landing burst at the seat once the spark arrives — expanding ring + star sparks.
+    if (p > 0.5) {
+      const bp = Math.min(1, (p - 0.5) / 0.5)
+      ctx.globalAlpha = (1 - bp) * 0.9
+      ctx.strokeStyle = '#d8c8ff'
+      ctx.lineWidth = 2 * zoom
+      ctx.beginPath()
+      ctx.arc(ex, ey, (2 + 11 * bp) * zoom, 0, Math.PI * 2)
+      ctx.stroke()
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3
+        const rr = (4 + 10 * bp) * zoom
+        ctx.globalAlpha = 1 - bp
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(ex + Math.cos(a) * rr - zoom, ey + Math.sin(a) * rr - zoom, 2 * zoom, 2 * zoom)
+      }
+    }
     ctx.restore()
   }
 }
