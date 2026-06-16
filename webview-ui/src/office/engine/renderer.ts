@@ -43,6 +43,19 @@ import {
 
 // ── Render functions ────────────────────────────────────────────
 
+// Reusable offscreen buffer for the floor/wall layer. Sized to the tile map in
+// native tile pixels (TILE_SIZE per tile) and only resized when dimensions
+// change, so we don't churn canvases every frame.
+let tileBuffer: HTMLCanvasElement | null = null
+function getTileBuffer(w: number, h: number): HTMLCanvasElement {
+  if (!tileBuffer) tileBuffer = document.createElement('canvas')
+  if (tileBuffer.width !== w || tileBuffer.height !== h) {
+    tileBuffer.width = w
+    tileBuffer.height = h
+  }
+  return tileBuffer
+}
+
 export function renderTileGrid(
   ctx: CanvasRenderingContext2D,
   tileMap: TileTypeVal[][],
@@ -52,51 +65,61 @@ export function renderTileGrid(
   tileColors?: Array<FloorColor | null>,
   cols?: number,
 ): void {
-  const s = TILE_SIZE * zoom
   const useSpriteFloors = hasFloorSprites()
   const tmRows = tileMap.length
   const tmCols = tmRows > 0 ? tileMap[0].length : 0
+  if (tmRows === 0 || tmCols === 0) return
   const layoutCols = cols ?? tmCols
 
-  // Floor tiles + wall base color.
-  // Snap each tile's pixel bounds to integers so fractional zoom levels
-  // don't leave hairline gaps between adjacent tiles.
+  // Render the floor/wall layer to an offscreen buffer at native tile
+  // resolution — each tile exactly TILE_SIZE px, on integer boundaries — then
+  // blit the whole buffer to the screen with a single scaled drawImage below.
+  // Because the buffer is one continuous, gap-free image, scaling it can never
+  // open the hairline seams that per-tile drawing leaves at fractional zoom.
+  const bufW = tmCols * TILE_SIZE
+  const bufH = tmRows * TILE_SIZE
+  const buf = getTileBuffer(bufW, bufH)
+  const bctx = buf.getContext('2d')!
+  bctx.imageSmoothingEnabled = false
+  bctx.clearRect(0, 0, bufW, bufH)
+
   for (let r = 0; r < tmRows; r++) {
-    const py = Math.floor(offsetY + r * s)
-    const pyNext = Math.floor(offsetY + (r + 1) * s)
-    const th = pyNext - py
+    const by = r * TILE_SIZE
     for (let c = 0; c < tmCols; c++) {
       const tile = tileMap[r][c]
 
       // Skip VOID tiles entirely (transparent)
       if (tile === TileType.VOID) continue
 
-      const px = Math.floor(offsetX + c * s)
-      const pxNext = Math.floor(offsetX + (c + 1) * s)
-      const tw = pxNext - px
+      const bx = c * TILE_SIZE
 
       if (tile === TileType.WALL || !useSpriteFloors) {
         // Wall tiles or fallback: solid color
         if (tile === TileType.WALL) {
           const colorIdx = r * layoutCols + c
           const wallColor = tileColors?.[colorIdx]
-          ctx.fillStyle = wallColor ? wallColorToHex(wallColor) : WALL_COLOR
+          bctx.fillStyle = wallColor ? wallColorToHex(wallColor) : WALL_COLOR
         } else {
-          ctx.fillStyle = FALLBACK_FLOOR_COLOR
+          bctx.fillStyle = FALLBACK_FLOOR_COLOR
         }
-        ctx.fillRect(px, py, tw, th)
+        bctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE)
         continue
       }
 
-      // Floor tile: get colorized sprite
+      // Floor tile: get colorized sprite, rasterized at 1x (exact 16×16).
       const colorIdx = r * layoutCols + c
       const color = tileColors?.[colorIdx] ?? { h: 0, s: 0, b: 0, c: 0 }
       const sprite = getColorizedFloorSprite(tile, color)
-      const cached = getCachedSprite(sprite, zoom)
-      ctx.drawImage(cached, px, py, tw, th)
+      const cached = getCachedSprite(sprite, 1)
+      bctx.drawImage(cached, bx, by)
     }
   }
 
+  // Single scaled blit of the gap-free buffer onto the screen. The destination
+  // origin is already integer-snapped by the caller; one nearest-neighbor scale
+  // fills the whole map area with no internal seams.
+  const s = TILE_SIZE * zoom
+  ctx.drawImage(buf, 0, 0, bufW, bufH, offsetX, offsetY, tmCols * s, tmRows * s)
 }
 
 interface ZDrawable {
