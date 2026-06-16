@@ -2935,7 +2935,40 @@ export class OfficeState {
             ch.tripTile = null
             ch.tripMode = null
           }
-          this.startTrip(ch, desired)
+          if (!this.startTrip(ch, desired)) {
+            if (desired === 'planting') {
+              this.pendingPlant.delete(ch.id)
+            }
+          }
+        }
+      }
+
+      // Re-path stranded trips: agent has a trip target but isn't walking and isn't there.
+      // The wizard line has its own reflow in tickWizard; skip it here.
+      if (
+        ch.tripMode &&
+        ch.tripMode !== 'wizard_blessing' &&
+        ch.tripMode !== 'campfire_wood' &&
+        ch.tripTile &&
+        ch.state !== CharacterState.WALK &&
+        ch.path.length === 0 &&
+        (ch.tileCol !== ch.tripTile.col || ch.tileRow !== ch.tripTile.row)
+      ) {
+        const path = findPath(ch.tileCol, ch.tileRow, ch.tripTile.col, ch.tripTile.row, this.tileMap, this.blockedTiles)
+        if (path.length > 0) {
+          ch.path = path
+          ch.moveProgress = 0
+          ch.state = CharacterState.WALK
+          ch.frame = 0
+          ch.frameTimer = 0
+        } else {
+          if (ch.tripMode === 'planting' && ch.tripTile) {
+            this.claimedPlantTiles.delete(`${ch.tripTile.col},${ch.tripTile.row}`)
+            this.pendingPlant.delete(ch.id)
+            ch.plantingTimer = undefined
+          }
+          this.cancelCampfireTrip(ch)
+          this.endTrip(ch)
         }
       }
 

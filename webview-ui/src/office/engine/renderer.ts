@@ -58,13 +58,22 @@ export function renderTileGrid(
   const tmCols = tmRows > 0 ? tileMap[0].length : 0
   const layoutCols = cols ?? tmCols
 
-  // Floor tiles + wall base color
+  // Floor tiles + wall base color.
+  // Snap each tile's pixel bounds to integers so fractional zoom levels
+  // don't leave hairline gaps between adjacent tiles.
   for (let r = 0; r < tmRows; r++) {
+    const py = Math.floor(offsetY + r * s)
+    const pyNext = Math.floor(offsetY + (r + 1) * s)
+    const th = pyNext - py
     for (let c = 0; c < tmCols; c++) {
       const tile = tileMap[r][c]
 
       // Skip VOID tiles entirely (transparent)
       if (tile === TileType.VOID) continue
+
+      const px = Math.floor(offsetX + c * s)
+      const pxNext = Math.floor(offsetX + (c + 1) * s)
+      const tw = pxNext - px
 
       if (tile === TileType.WALL || !useSpriteFloors) {
         // Wall tiles or fallback: solid color
@@ -75,7 +84,7 @@ export function renderTileGrid(
         } else {
           ctx.fillStyle = FALLBACK_FLOOR_COLOR
         }
-        ctx.fillRect(offsetX + c * s, offsetY + r * s, s, s)
+        ctx.fillRect(px, py, tw, th)
         continue
       }
 
@@ -84,7 +93,7 @@ export function renderTileGrid(
       const color = tileColors?.[colorIdx] ?? { h: 0, s: 0, b: 0, c: 0 }
       const sprite = getColorizedFloorSprite(tile, color)
       const cached = getCachedSprite(sprite, zoom)
-      ctx.drawImage(cached, offsetX + c * s, offsetY + r * s)
+      ctx.drawImage(cached, px, py, tw, th)
     }
   }
 

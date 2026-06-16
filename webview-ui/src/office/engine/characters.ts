@@ -223,6 +223,11 @@ export function updateCharacter(
             ch.frame = 0
             ch.frameTimer = 0
           }
+        } else {
+          // Seat was removed — type in place rather than staying IDLE forever
+          ch.state = CharacterState.TYPE
+          ch.frame = 0
+          ch.frameTimer = 0
         }
         break
       }
