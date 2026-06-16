@@ -1190,9 +1190,9 @@ function drawBabyDragon(
   ctx.save()
   ctx.translate(cx, cy + bob)
   ctx.fillStyle = '#3fa85a'
-  ctx.beginPath(); ctx.ellipse(0, 0, 4 * cell, 3.2 * cell, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.ellipse(0, 0, 5 * cell, 3.7 * cell, 0, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#bfe89a'
-  ctx.beginPath(); ctx.ellipse(0, 1.2 * cell, 2.4 * cell, 1.8 * cell, 0, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.ellipse(0, 1.4 * cell, 3.2 * cell, 2.1 * cell, 0, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#3fa85a'
   ctx.beginPath(); ctx.ellipse(dir * 3.2 * cell, -2.4 * cell, 2.6 * cell, 2.2 * cell, 0, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#e8e0c8'
@@ -1352,67 +1352,6 @@ function drawWoodStack(
       if (drawn >= woodLevel) break
     }
   }
-  ctx.restore()
-}
-
-/** Dim the entire canvas around the campfire while the ritual dance is on, leaving a
- *  bright halo around the fire itself. Fades in over ~1.5s when entering 'dancing' and
- *  out over ~1.5s when entering 'burning_down', so transitions don't pop. No-op for
- *  every other phase. */
-export function renderDanceDim(
-  ctx: CanvasRenderingContext2D,
-  canvasW: number, canvasH: number,
-  offsetX: number, offsetY: number,
-  zoom: number,
-  timeMs: number,
-  campfire?: CampfireRenderState,
-): void {
-  if (!campfire) return
-  const FADE_MS = 1500
-  const TARGET_ALPHA = 0.62
-  const elapsed = timeMs - campfire.phaseStartMs
-  let alpha = 0
-  if (campfire.phase === 'dancing') {
-    alpha = TARGET_ALPHA * Math.min(1, elapsed / FADE_MS)
-  } else if (campfire.phase === 'burning_down') {
-    alpha = TARGET_ALPHA * Math.max(0, 1 - elapsed / FADE_MS)
-  }
-  if (alpha <= 0.01) return
-
-  const tile = campfire.fireTile ?? CAMPFIRE_TILE
-  const cx = tile.col * TILE_SIZE + TILE_SIZE / 2
-  const baseY = tile.row * TILE_SIZE + 7
-  const px = offsetX + cx * zoom
-  const py = offsetY + baseY * zoom
-
-  // Radial gradient: transparent at the fire (so flames + nearby dancers stay lit),
-  // ramping to the target alpha out beyond the ring. Inner clear radius ~3 tiles,
-  // outer dim radius ~9 tiles — far enough that distant rings are clearly darkened.
-  const inner = TILE_SIZE * 3 * zoom
-  const outer = TILE_SIZE * 9 * zoom
-  // Slight breathing flicker keyed to the same cadence as the halo, so the dim
-  // pulses subtly with the bonfire.
-  const flicker = 0.92 + 0.08 * Math.sin(timeMs * 0.005)
-
-  ctx.save()
-  // First: a flat darkening layer covering everything outside the bright zone.
-  const fade = ctx.createRadialGradient(px, py, inner, px, py, outer)
-  fade.addColorStop(0, 'rgba(0, 0, 0, 0)')
-  fade.addColorStop(1, `rgba(8, 5, 24, ${alpha})`)
-  ctx.fillStyle = fade
-  ctx.fillRect(0, 0, canvasW, canvasH)
-  // Then: solid dim past the outer radius so distant tiles aren't suddenly bright.
-  ctx.fillStyle = `rgba(8, 5, 24, ${alpha})`
-  ctx.beginPath()
-  ctx.rect(0, 0, canvasW, canvasH)
-  ctx.arc(px, py, outer, 0, Math.PI * 2, true)
-  ctx.fill('evenodd')
-  // Warm firelight wash over the inner zone — boosts the bonfire's reach.
-  const warm = ctx.createRadialGradient(px, py, 0, px, py, inner * flicker)
-  warm.addColorStop(0, `rgba(255, 160, 60, ${0.32 * alpha / TARGET_ALPHA})`)
-  warm.addColorStop(1, 'rgba(255, 100, 20, 0)')
-  ctx.fillStyle = warm
-  ctx.fillRect(0, 0, canvasW, canvasH)
   ctx.restore()
 }
 
@@ -2487,12 +2426,8 @@ export function renderFrame(
   // waist down. Drawn before bubbles/effects so those still float above.
   renderPoolForeground(ctx, POOL_RECT, offsetX, offsetY, zoom, timeMs ?? performance.now())
 
-  // Dance dim — vignette around the bonfire while the ritual is dancing. Must come
-  // BEFORE the flame pass so the fire renders on top of the darkened scene.
-  renderDanceDim(ctx, canvasWidth, canvasHeight, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
-
-  // Campfire flames — drawn over scene (and on top of any dance-dim) so the bonfire
-  // dominates the frame during the ritual.
+  // Campfire flames — drawn over the scene so the bonfire dominates the frame
+  // during the ritual.
   renderCampfireFlames(ctx, offsetX, offsetY, zoom, timeMs ?? performance.now(), campfire)
 
   // Speech bubbles (always on top of characters)
